@@ -13,6 +13,9 @@ tests:    happy path only
 risks
   ! mass-assignable: a client that reaches User.create can set role=admin       → type User
   ! untested: invalid input, role injection                                     → registerUser
-  ! passes the raw request instead of `input`: role and address.zip reach the…  → registerUser
+  ! passes req.raw instead of req.input: role and address.zip reach the DB un…  → registerUser
   ! the listener is queued before commit: the mail can go out for a rolled-ba…  → createUser
   ! irreversible: a retry after a timeout can send it twice                     → sendWelcomeMail
+
+checker
+  ⚠ W060 `registerUser` declares `input`, but `handle` reads `req.raw`, which…  → line 53

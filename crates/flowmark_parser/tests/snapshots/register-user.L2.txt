@@ -31,10 +31,10 @@ interface Events {
 const registerUser = entry({
   trigger: "POST /api/users",
   access: "public",
+  input: shape<SignupInput>(),
   rateLimit: "10/min",
   async handle(req): Promise<UserResponse> {
-    const input = validate<SignupInput>(req)  // fails with 422
-    // ! passes the raw request instead of `input`: role and address.zip reach the DB unvalidated
+    // ! passes req.raw instead of req.input: role and address.zip reach the DB unvalidated
     const user = await createUser(req.raw)
     return respond(201, pick(user, "id", "name", "email"))
   },

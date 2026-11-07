@@ -70,9 +70,10 @@ The module is 2.0 MB (530 KB gzipped). tsrs never frees parsed syntax trees, so 
 | §12.1 gate 1 | parses as TypeScript | yes (`E000`) |
 | §12.1 gate 2 | version line, card, required card fields in order | yes (`E001`–`E003`) |
 | §4 | section names and order | yes (`E010`–`E012`) |
-| §12.1 gate 4 | `const <name> = entry({ trigger, access, handle })`, one option per line, known trigger kinds, option order | yes (`E020`–`E024`, `W024`, `W025`) |
+| §12.1 gate 4 | `const <name> = entry({ trigger, access, handle })`, one option per line, known trigger kinds, option order, `input: shape<T>()` only where input comes from outside | yes (`E020`–`E026`, `W024`, `W025`) |
+| §12.3 | an entry declares `input`, but `handle` reads `req.raw` | yes (`W060`) |
 | §7, §8.3 | comment grammar, quote-only refs need a scope, attachment | yes (`E030`, `E031`, `W040`) |
-| §9.3 | level markers without effect; `trigger`/`access` cannot be lowered | yes (`W050`–`W052`, `E024`) |
+| §9.3 | level markers without effect; `trigger`/`access`/`input` cannot be lowered | yes (`W050`–`W052`, `E024`) |
 | §10.3 | L1/L2 budgets | yes (`W070`, `W071`) |
 | §3 | no imports/exports | yes (`E080`) |
 | §12.1 gate 3 | refs resolve in the reviewed code | not yet (tree-sitter) |

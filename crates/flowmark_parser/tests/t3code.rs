@@ -25,6 +25,7 @@ fn entries() {
         (t.kind.as_str(), t.name.as_str()),
         ("rpc", "server.updateSettings")
     );
+    assert_eq!(rpc.input.as_deref(), Some("SettingsUpdate"));
     let push = &doc.entries[1];
     assert_eq!(push.trigger.as_ref().unwrap().kind, "event");
 }

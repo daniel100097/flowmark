@@ -77,8 +77,10 @@ test("L2 and L3", () => {
 test("L0 shows the card and risks; clicking a risk reveals it", () => {
   const { el, viewer } = mount(model(EXAMPLE), 0);
   assert.equal(el.querySelector(".fm-card h1").textContent, "Register user");
-  const risks = [...el.querySelectorAll(".fm-list li")];
+  const [riskList, checkerList] = el.querySelectorAll(".fm-list");
+  const risks = [...riskList.querySelectorAll("li")];
   assert.equal(risks.length, 5);
+  assert.match(checkerList.textContent, /W060/, "the checker finding is listed too");
   const listener = risks.find((li) => li.textContent.includes("queued before commit"));
   click(listener.querySelector("a"));
   assert.equal(viewer.level, 1);

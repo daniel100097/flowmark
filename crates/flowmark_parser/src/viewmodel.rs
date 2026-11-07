@@ -870,6 +870,7 @@ fn changes(base: &Document, head: &Document, rows: &[Row]) -> Changes {
                     .unwrap_or_default(),
             ),
             ("access".to_string(), e.access.clone().unwrap_or_default()),
+            ("input".to_string(), e.input.clone().unwrap_or_default()),
         ];
         v.extend(e.options.iter().map(|o| (o.name.clone(), o.value.clone())));
         if let Some(h) = &e.handle {
@@ -1048,7 +1049,7 @@ mod tests {
                 "    await db.insert<Address>({ ...data.address, userId: user.id }) // @ \"->address()->create(\"\n    // ! external call inside the transaction\n    await external(\"Stripe\").createCustomer(email) // @ \"Customer::create(\"\n",
             );
         let (b, h) = (parse(EXAMPLE), parse(&head));
-        assert!(h.diagnostics.is_empty(), "{:#?}", h.diagnostics);
+        assert!(!h.has_errors(), "{:#?}", h.diagnostics);
         let m = build_diff(&b, EXAMPLE, "base", &h, &head, "head");
         let ch = m.changes.as_ref().unwrap();
         assert_eq!(ch.card.len(), 1);

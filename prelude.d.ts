@@ -15,7 +15,7 @@
  *
  *   entry        where execution starts: entry
  *   access       who may do this: Access, authorize
- *   input        untrusted data and its validation: Raw, validate
+ *   input        untrusted data and its validation: Raw, shape (entry `input`), validate
  *   read         reads: db.find/list/count, cache.get, files.read
  *   write        persistent changes: db.insert/update/upsert/delete, cache.set/forget, files.write/delete
  *   effect       things that leave the process: emit, queue, mail, notify, external, log
@@ -155,14 +155,37 @@ interface CliInput {
 }
 
 /** What `handle` receives, derived from the trigger. */
-type Payload<T> =
-  T extends HttpTrigger ? HttpRequest :
+type Payload<T, I = never> =
+  T extends HttpTrigger ? HttpRequest & WithInput<I> :
   T extends `event ${infer K extends keyof Events}` ? Events[K] :
   T extends `job ${infer K extends keyof Jobs}` ? Jobs[K] :
-  T extends MessageTrigger ? MessageInput :
-  T extends CliTrigger ? CliInput :
-  T extends GraphqlTrigger | RpcTrigger | WsTrigger ? CallInput :
+  T extends MessageTrigger ? MessageInput & WithInput<I> :
+  T extends CliTrigger ? CliInput & WithInput<I> :
+  T extends GraphqlTrigger | RpcTrigger | WsTrigger ? CallInput & WithInput<I> :
   void
+
+/** `input` on what `handle` receives, when the entry declares `input: shape<I>()`. */
+type WithInput<I> = [I] extends [never] ? {} : {
+  /** the input, already validated against I before `handle` runs */
+  input: I
+}
+
+declare const __shape: unique symbol
+/** What `shape<I>()` returns. */
+interface Shape<I> {
+  readonly [__shape]: I
+}
+
+/**
+ * The shape an entry's input is validated against before `handle` runs (body, arguments, message):
+ *
+ *   input: shape<SignupInput>(),
+ *
+ * Invalid input fails with 422 (HTTP) or the transport's validation error, and `handle` never runs.
+ * `handle` then reads `req.input` (validated) instead of `req.raw` (not validated).
+ * @category input
+ */
+declare function shape<I>(): Shape<I>
 
 /**
  * Event name → payload. Each review file declares the events it uses:
@@ -177,16 +200,21 @@ interface Events {}
 interface Jobs {}
 
 /** Options every entry has. */
-interface EntryBase<T extends Trigger> {
+interface EntryBase<T extends Trigger, I> {
   /** what starts it */
   trigger: T
   /** who may start it; required for every entry, "system" when nobody outside can */
   access: Access
+  /**
+   * The shape the input is validated against before `handle` runs. HTTP, GraphQL, RPC, WebSocket,
+   * message and cli entries only. Leave it out when the code validates nothing up front.
+   */
+  input?: Shape<I>
   /** middleware, guards or interceptors worth knowing about, by name */
   guards?: string[]
   timeout?: Duration
   /** the flow. For HTTP, GraphQL, RPC and WebSocket the return value is the output. */
-  handle(input: Payload<T>): unknown
+  handle(input: Payload<T, I>): unknown
 }
 
 /** HTTP, GraphQL, RPC, WebSocket */
@@ -221,14 +249,20 @@ interface ScheduleOptions {
 }
 
 /** Extra options allowed for each kind of trigger. */
+/** Entries started by this app or by time take no `input`: their payload is already typed. */
+interface NoInput {
+  input?: never
+}
+
 type EntryOptions<T> =
   T extends HttpTrigger | GraphqlTrigger | RpcTrigger | WsTrigger ? RequestOptions :
-  T extends EventTrigger ? EventOptions :
-  T extends JobTrigger | MessageTrigger ? RetryOptions :
-  T extends ScheduleTrigger ? ScheduleOptions :
+  T extends EventTrigger ? EventOptions & NoInput :
+  T extends JobTrigger ? RetryOptions & NoInput :
+  T extends MessageTrigger ? RetryOptions :
+  T extends ScheduleTrigger ? ScheduleOptions & NoInput :
   {}
 
-type EntryDef<T extends Trigger> = EntryBase<T> & EntryOptions<T>
+type EntryDef<T extends Trigger, I> = EntryBase<T, I> & EntryOptions<T>
 
 interface Entry {
   readonly trigger: Trigger
@@ -240,20 +274,26 @@ interface Entry {
  *   const registerUser = entry({
  *     trigger: "POST /api/users",
  *     access: "public",
+ *     input: shape<SignupInput>(),
  *     rateLimit: "10/min",
- *     async handle(req): Promise<UserResponse> { ... },
+ *     async handle(req): Promise<UserResponse> { ... req.input ... },
  *   })
  *
- * The type of `handle`'s input follows from the trigger.
+ * What `handle` receives follows from the trigger, plus `input` when the entry declares one.
  * @category entry
  */
-declare function entry<T extends Trigger>(def: EntryDef<T>): Entry
+declare function entry<T extends Trigger, I = never>(def: EntryDef<T, I>): Entry
 
 // ─── input ───────────────────────────────────────────────────────────────────
 
 /**
- * Validates untrusted input against T. Fails with 422 when invalid.
+ * Validates untrusted data against T, as a step in the flow. Fails with 422 when invalid.
  * Returns only the validated fields.
+ *
+ * For the entry's own input that the framework validates before `handle` runs, declare
+ * `input: shape<T>()` on the entry instead. Use `validate` for validation that really is a step:
+ * in the middle of the handler, of something other than the request (a webhook body, a file,
+ * an external API's answer), or of only part of the input.
  * @category input
  */
 declare function validate<T>(source: HttpRequest | Raw): T

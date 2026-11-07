@@ -7,9 +7,11 @@ use flowmark_parser::{Sigil, UnitKind, parse, view};
 const EXAMPLE: &str = include_str!("../../../examples/register-user.review.ts");
 
 #[test]
-fn example_has_no_diagnostics() {
+fn example_has_exactly_its_known_finding() {
     let doc = parse(EXAMPLE);
-    assert!(doc.diagnostics.is_empty(), "{:#?}", doc.diagnostics);
+    // The example's real bug: the entry declares `input` but the handler passes `req.raw` on.
+    let found: Vec<_> = doc.diagnostics.iter().map(|d| (d.code, d.line)).collect();
+    assert_eq!(found, [("W060", 53)], "{:#?}", doc.diagnostics);
     assert_eq!(doc.version.as_deref(), Some("0.1"));
 }
 
@@ -52,6 +54,7 @@ fn entries() {
         ("http", Some("POST"), "/api/users")
     );
     assert_eq!(register.access.as_deref(), Some("\"public\""));
+    assert_eq!(register.input.as_deref(), Some("SignupInput"));
     assert_eq!(
         register
             .options
@@ -168,7 +171,7 @@ fn effects_and_calls() {
     assert_eq!(
         effects,
         [
-            "input:validate:SignupInput",
+            "input:shape:SignupInput",
             "output:respond:201",
             "consistency:db.transaction:",
             "write:db.insert:User",

@@ -18,6 +18,7 @@ pub const SECTIONS: &[&str] = &["data", "flow", "details", "async"];
 const ENTRY_OPTION_ORDER: &[&str] = &[
     "trigger",
     "access",
+    "input",
     "queued",
     "rateLimit",
     "retries",
@@ -428,7 +429,7 @@ impl Builder {
                 self.entry_calls.push(self.start(n));
                 return;
             }
-            "validate" => ("input", type_arg),
+            "validate" | "shape" => ("input", type_arg),
             "authorize" => ("access", str_arg(0)),
             "fail" | "assert" => ("failure", src_arg(if path == "fail" { 0 } else { 1 })),
             "db.find" | "db.findOrFail" | "db.list" | "db.count" => ("read", type_arg),
@@ -579,9 +580,12 @@ impl Builder {
             unit,
             trigger: None,
             access: None,
+            input: None,
             options: Vec::new(),
             handle: None,
         };
+        let mut handle_fn: Option<P<Node>> = None;
+        let mut input_line = line;
         let Some(&obj) = call
             .arguments()
             .first()
@@ -629,6 +633,25 @@ impl Builder {
                     }
                 }
                 "access" => entry.access = Self::init(prop).map(|i| self.src(i).to_string()),
+                "input" => {
+                    input_line = pline;
+                    // input: shape<T>()
+                    let shape = Self::init(prop).filter(|i| {
+                        i.kind() == Kind::CallExpression
+                            && self
+                                .callee_path(i.as_call_expression().expression)
+                                .as_deref()
+                                == Some("shape")
+                    });
+                    match shape.and_then(|c| c.type_arguments().first().copied()) {
+                        Some(t) => entry.input = Some(self.src(t).to_string()),
+                        None => self.error(
+                            "E025",
+                            pline,
+                            format!("`{label}`: input must be `shape<T>()`"),
+                        ),
+                    }
+                }
                 "handle" => {
                     let func = match prop.kind() {
                         Kind::MethodDeclaration => Some(prop),
@@ -636,6 +659,7 @@ impl Builder {
                             matches!(i.kind(), Kind::ArrowFunction | Kind::FunctionExpression)
                         }),
                     };
+                    handle_fn = func;
                     match func {
                         Some(f) => {
                             entry.handle = Some(Handle {
@@ -673,6 +697,42 @@ impl Builder {
                 );
             }
         }
+        // `input` only where something outside sends data (§6.1).
+        if entry.input.is_some()
+            && let Some(t) = &entry.trigger
+            && matches!(t.kind.as_str(), "event" | "job" | "schedule")
+        {
+            self.error(
+                "E026",
+                input_line,
+                format!(
+                    "`{label}`: {} entries take no `input`; their payload is already typed",
+                    t.kind
+                ),
+            );
+        }
+        // Declared input, but the handler reads the unvalidated request (§12.3).
+        if entry.input.is_some()
+            && let Some(f) = handle_fn
+            && let Some(param) = f
+                .parameters()
+                .first()
+                .and_then(|p| Self::name_of(*p))
+                .filter(|n| n.kind() == Kind::Identifier)
+                .map(|n| n.text().to_string())
+        {
+            let mut uses = Vec::new();
+            self.find_raw_uses(f, &param, &mut uses);
+            for l in uses {
+                self.warn(
+                    "W060",
+                    l,
+                    format!(
+                        "`{label}` declares `input`, but `handle` reads `{param}.raw`, which is not validated"
+                    ),
+                );
+            }
+        }
         // Option order (§6.1).
         let rank = |n: &str| ENTRY_OPTION_ORDER.iter().position(|o| *o == n);
         let mut last = 0;
@@ -688,6 +748,25 @@ impl Builder {
             }
         }
         self.doc.entries.push(entry);
+    }
+
+    /// Lines where `<param>.raw` is read inside `node`.
+    fn find_raw_uses(&self, node: P<Node>, param: &str, out: &mut Vec<u32>) {
+        if node.kind() == Kind::PropertyAccessExpression {
+            let pa = node.as_property_access_expression();
+            if pa.expression.kind() == Kind::Identifier
+                && pa.expression.text() == param
+                && pa.name.text() == "raw"
+            {
+                let line = self.line_of(node);
+                if !out.contains(&line) {
+                    out.push(line);
+                }
+            }
+        }
+        for child in node.iter_children() {
+            self.find_raw_uses(child, param, out);
+        }
     }
 
     // ─── comments ───────────────────────────────────────────────────────────
@@ -1137,7 +1216,10 @@ impl Builder {
             let mut marker = marker;
             if let Some(m) = marker {
                 let label = self.units[u].label.clone();
-                if self.is_entry_option(u) && (label == "trigger" || label == "access") && m > 1 {
+                if self.is_entry_option(u)
+                    && matches!(label.as_str(), "trigger" | "access" | "input")
+                    && m > 1
+                {
                     self.error(
                         "E024",
                         marker_line,
@@ -1250,7 +1332,7 @@ impl Builder {
             e.options.iter().any(|o| o.unit == u)
                 || e.handle.as_ref().is_some_and(|h| h.unit == u)
                 || (self.units[u].parent == Some(e.unit)
-                    && matches!(self.units[u].label.as_str(), "trigger" | "access"))
+                    && matches!(self.units[u].label.as_str(), "trigger" | "access" | "input"))
         })
     }
 

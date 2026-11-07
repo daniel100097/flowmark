@@ -109,6 +109,8 @@ pub struct Entry {
     pub trigger: Option<Trigger>,
     /// `access` as written, e.g. `"public"` or `{ role: "admin" }`.
     pub access: Option<String>,
+    /// The type in `input: shape<T>()`: what the input is validated against before `handle` runs.
+    pub input: Option<String>,
     /// Every option except `trigger`, `access` and `handle`, in source order.
     pub options: Vec<EntryOption>,
     pub handle: Option<Handle>,

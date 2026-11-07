@@ -45,7 +45,8 @@ test("wasm diff model equals the CLI's", async () => {
 
 test("wasm check, parse and text view", async () => {
   const fm = await FlowmarkWasm.load(wasmBytes());
-  assert.deepEqual(await fm.check(source), []);
+  // The example's one known finding: declared input, but req.raw is passed on.
+  assert.deepEqual((await fm.check(source)).map((d) => [d.code, d.line]), [["W060", 53]]);
   const broken = await fm.check("const x = entry({ trigger: \"FETCH /x\" })\n");
   const codes = broken.map((d) => d.code);
   for (const c of ["E001", "E002", "E021", "E022"]) assert.ok(codes.includes(c), `${c} in ${codes}`);
@@ -80,7 +81,7 @@ test("the web app loads, checks as you type and shows diagnostics", async () => 
   await w.FlowmarkApp.start({ wasm: wasmBytes(), example: "example.review.ts" });
 
   const doc = w.document;
-  assert.match(doc.getElementById("status").textContent, /✓ no problems/);
+  assert.match(doc.getElementById("status").textContent, /^1 warning ·/);
   assert.match(doc.querySelector(".fm-code").textContent, /const registerUser = entry/);
 
   // Edit: remove `access` from an entry.
@@ -88,6 +89,6 @@ test("the web app loads, checks as you type and shows diagnostics", async () => 
   editor.value = source.replace('  access: "public",\n', "");
   editor.dispatchEvent(new w.Event("input"));
   await new Promise((r) => setTimeout(r, 300));
-  assert.match(doc.getElementById("status").textContent, /1 error/);
-  assert.equal(doc.querySelector(".fm-count.error").textContent.trim(), "1 ✗");
+  assert.match(doc.getElementById("status").textContent, /^1 error, 1 warning ·/);
+  assert.equal(doc.querySelector(".fm-count.error").textContent.trim(), "1 ✗ 1 ⚠");
 });

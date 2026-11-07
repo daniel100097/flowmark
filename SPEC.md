@@ -90,7 +90,7 @@ The first block of every file. It answers "Do I need to look, and where?"
 | Field | Required | Content |
 |---|---|---|
 | `access` | yes | The `access` of every entry. One value when all entries share it; otherwise one item per value with entry names: `public (registerUser), system (sendWelcomeMail)`. |
-| `input` | yes | Validated input types; `raw request` if unvalidated input is used. |
+| `input` | yes | The entries' `input` shapes and `validate<T>` types; `raw request` if unvalidated input is used. |
 | `reads` | no | Models/stores read, when it matters (authorization, locking, cost). |
 | `writes` | yes | Models, files and cache keys written. Note transactions in `( )`. |
 | `effects` | yes | `event X`, `queue X`, `mail X`, `notify X`, `external Service.op`. |
@@ -125,15 +125,17 @@ with a domain name:
 const registerUser = entry({
   trigger: "POST /api/users", // @ routes/api.php "Route::post('/users'"
   access: "public",
+  input: shape<SignupInput>(), // @ StoreUserRequest.rules
   rateLimit: "10/min", // @ routes/api.php "throttle:10,1"
   async handle(req): Promise<UserResponse> { // @ UserController.store
-    const input = validate<SignupInput>(req)
+    const user = await createUser(req.input)
     …
   },
 })
 ```
 
-**Trigger.** One string, `"<kind> <name>"`. The kind decides what `handle` receives:
+**Trigger.** One string, `"<kind> <name>"`. The kind decides what `handle` receives
+(plus `input`, when the entry declares one):
 
 | Kind | Trigger | `handle` receives |
 |---|---|---|
@@ -153,6 +155,7 @@ const registerUser = entry({
 |---|---|---|---|
 | `trigger` | all | yes | L1, cannot be lowered |
 | `access` | all | yes; `"system"` when nobody outside can start it | L1, cannot be lowered |
+| `input` | HTTP, GraphQL, RPC, WebSocket, message, cli | when the input is validated before `handle` runs | L1, cannot be lowered |
 | `queued` | events | yes | L1 |
 | `rateLimit` | HTTP, GraphQL, RPC, WebSocket | no | L1 |
 | `retries`, `idempotent`, `unique` | events, jobs, messages | no | L1 |
@@ -171,11 +174,20 @@ Rules:
   Viewers use the name in the risk list and in cross-references (`used by: registerUser`);
   git shows the line in diff hunk headers.
 - **Webhooks** are HTTP entries with `access: { signature: "Stripe" }`.
+- **Validated input is part of the entry.** When the framework validates the input before the
+  handler runs (form requests, DTO pipes, schema-decoded RPC payloads, ...), declare it:
+  `input: shape<SignupInput>()`. Invalid input never reaches `handle` (HTTP: 422). `handle` then
+  reads `req.input`, typed by the shape. A separate `validate()` line would only repeat the type
+  and suggest the check happens inside the handler.
 - **Unvalidated input is always `Raw`** (`req.raw`, `req.params`, `msg.raw`, `call.raw`, `cli.args`).
-  Validate it with `validate<T>()`.
+  An entry that declares `input` but reads `req.raw` gets a warning (§12.3).
+- **`validate<T>()` is for validation that is a step in the flow:** in the middle of the
+  handler, of something other than the entry's input (a webhook body, a file, an external
+  API's answer), or of only part of the input.
 - **Type-checked.** The prelude types make `tsc` catch an unknown trigger kind, an unknown
   event or job name, a missing `access`, a missing `queued` on an event, options that don't
-  fit the trigger kind, and payload fields that don't exist.
+  fit the trigger kind (including `input` on events, jobs and schedules), payload fields that
+  don't exist, and `req.input` on an entry without `input`.
 
 ### 6.2 Writing rules for the body
 
@@ -297,7 +309,7 @@ The writer only adds markers where the default is wrong (see the level guide, §
 | Construct | Default |
 |---|---|
 | Version line, review card | L0 |
-| `entry({ … })` line, its options, statements directly in `handle` | L1; `trigger` and `access` cannot be lowered; `guards`, `timeout`, `backoff` are L2 (§6.1) |
+| `entry({ … })` line, its options, statements directly in `handle` | L1; `trigger`, `access` and `input` cannot be lowered; `guards`, `timeout`, `backoff` are L2 (§6.1) |
 | Branches whose block ends in `fail(...)` (error paths) | L2 |
 | Other branches and loops | level of the enclosing block |
 | Function definitions in `details` | L2 (call sites keep their own level) |
@@ -401,7 +413,8 @@ For every statement, ask in order. The first "yes" decides.
 | Statement | Level | Why |
 |---|---|---|
 | `authorize("orders.refund", order)` | L1 | who |
-| `const input = validate<RefundInput>(req)` | L1 | in |
+| `input: shape<RefundInput>()` (entry option) | L1, cannot be lowered | in |
+| `const event = validate<StripeEvent>(req.raw)` (webhook body checked inside the handler) | L1 | in |
 | `if (!order) fail(404)` | L2 (default) | plain error path |
 | `if (order.status !== "paid") fail(409)` | **L1** (marker) | business rule that stops the write: same-story test |
 | `const amount = order.items.reduce((s, i) => s + i.price, 0)` | L2 | evidence for the charge amount |
@@ -487,7 +500,8 @@ separate from the writer's own `!`.
 1. The file parses as TypeScript (tree-sitter).
 2. Version line and card are present; required card fields are present, in order.
 3. Every ref resolves (§8.2) and has no ✗ status.
-4. Every entry is `const <name> = entry({ … })` with `trigger`, `access` and `handle`, each on its own line.
+4. Every entry is `const <name> = entry({ … })` with `trigger`, `access` and `handle`, each on its own line;
+   `input` is `shape<T>()` and only on entries that receive input from outside.
 5. No ambiguous comment attachment; no quote-only ref without a scope.
 
 ### 12.2 Card ↔ body
@@ -495,7 +509,7 @@ separate from the writer's own `!`.
 | Card field | Compared with |
 |---|---|
 | `access` | `access` of every entry |
-| `input` | `validate<T>` type arguments; `raw request` required if a `Raw` field of an entry's input (`raw`, `params`, `headers`, `meta`, `args`, `options`) is used outside `validate` |
+| `input` | the entries' `input: shape<T>()` and `validate<T>` type arguments; `raw request` required if a `Raw` field of an entry's input (`raw`, `params`, `headers`, `meta`, `args`, `options`) is used outside `validate` |
 | `writes` | type arguments of `db.insert/update/upsert/delete`, plus `files.write/delete`, `cache.set/forget` |
 | `effects` | `emit`, `queue`, `mail`, `notify`, `external` calls by name |
 | `output` | `respond` status codes and the return types of `handle` |
@@ -506,11 +520,12 @@ A mismatch is a gate error.
 
 - **Type check** with `tsc`: each file in its own program with `prelude.d.ts`,
   options `strict`, `noUnusedLocals`, `lib: ["es2022"]`, `types: []`.
-  Example of a real finding: *"'input' is declared but its value is never read"*,
-  which means the validated input is never used.
+  Example of a real finding: *"Property 'role' does not exist on type 'SignupInput'"*:
+  the handler uses a field the validated input does not have.
 - **Coverage.** Calls inside the cited symbols that no ref covers are listed as
   *possibly left out*. This is the main guard against the writer missing something.
 - **Lints** (possible because writes and effects go through the prelude):
+  - an entry declares `input`, but `handle` reads `req.raw` (`W060`): the validated input is bypassed
   - unvalidated `Raw` data reaches `db.insert/update/upsert` without a `!`
   - `db.list` without `limit` (unbounded read)
   - `db.*` or `external()` inside a loop (one query or call per item)
@@ -529,12 +544,12 @@ original code.
   "file": "docs/review/register-user.review.ts",
   "commit": "a1b2c3d",
   "refs": [
-    { "line": 51, "ref": "StoreUserRequest.rules", "status": "ok",
+    { "line": 49, "ref": "StoreUserRequest.rules", "status": "ok",
       "target": { "path": "app/Http/Requests/StoreUserRequest.php", "start": 14, "end": 24 } }
   ],
-  "lines": [ { "line": 51, "level": 1, "categories": ["input"] } ],
-  "risks": [ { "line": 52, "kind": "!", "text": "passes the raw request instead of `input`: …" } ],
-  "findings": [ { "kind": "tsc", "line": 51, "message": "'input' is declared but its value is never read" } ]
+  "lines": [ { "line": 49, "level": 1, "categories": ["input"] } ],
+  "risks": [ { "line": 52, "kind": "!", "text": "passes req.raw instead of req.input: …" } ],
+  "findings": [ { "kind": "W060", "line": 53, "message": "`registerUser` declares `input`, but `handle` reads `req.raw`, which is not validated" } ]
 }
 ```
 
@@ -547,6 +562,7 @@ original code.
 3. Every statement that touches access, input, data, effects or output has a ref,
    directly or through its scope.
 4. Use `entry()` for every entry point and the prelude for every boundary; use domain names for entries and helpers.
+   Input the framework validates up front is `input: shape<T>()` on the entry, not a `validate()` line.
 5. Show data with types; show exposed fields with `pick` / `Pick`.
 6. Mark risks with `!`, possible risks with `!?`, and doubts with `?`. Never guess silently.
 7. When a file exists, edit it minimally (§11.2).
@@ -557,8 +573,8 @@ original code.
 ## 14. Example
 
 Full file: [`examples/register-user.review.ts`](examples/register-user.review.ts).
-It type-checks against the prelude with exactly one finding, which is the real bug:
-the validated `input` is never used.
+It type-checks against the prelude, and `flowmark check` reports exactly one finding, which is
+the real bug: `registerUser` declares `input`, but `handle` passes `req.raw` on (`W060`).
 
 ### 14.1 Source (excerpt)
 
@@ -570,10 +586,10 @@ the validated `input` is never used.
 const registerUser = entry({
   trigger: "POST /api/users", // @ routes/api.php "Route::post('/users'"
   access: "public",
+  input: shape<SignupInput>(), // @ StoreUserRequest.rules
   rateLimit: "10/min", // @ routes/api.php "throttle:10,1"
   async handle(req): Promise<UserResponse> { // @ UserController.store
-    const input = validate<SignupInput>(req) // @ StoreUserRequest.rules fails with 422
-    // ! passes the raw request instead of `input`: role and address.zip reach the DB unvalidated
+    // ! passes req.raw instead of req.input: role and address.zip reach the DB unvalidated
     const user = await createUser(req.raw) // @ "$request->all()"
     return respond(201, pick(user, "id", "name", "email")) // @ UserResource.toArray
   },
@@ -608,8 +624,7 @@ const sendWelcomeMail = entry({
 
 ### 14.2 Rendered at L0
 
-Output of `flowmark view examples/register-user.review.ts --level 0`. The `checker`
-line comes from the type check (§12.3), which the CLI does not run yet.
+Output of `flowmark view examples/register-user.review.ts --level 0`.
 
 ```
 Register user
@@ -627,12 +642,12 @@ tests:    happy path only
 risks
   ! mass-assignable: a client that reaches User.create can set role=admin       → type User
   ! untested: invalid input, role injection                                     → registerUser
-  ! passes the raw request instead of `input`: role and address.zip reach the…  → registerUser
+  ! passes req.raw instead of req.input: role and address.zip reach the DB un…  → registerUser
   ! the listener is queued before commit: the mail can go out for a rolled-ba…  → createUser
   ! irreversible: a retry after a timeout can send it twice                     → sendWelcomeMail
 
 checker
-  ⚠ 'input' is declared but its value is never read                             → registerUser
+  ⚠ W060 `registerUser` declares `input`, but `handle` reads `req.raw`, which…  → line 53
 ```
 
 ### 14.3 Rendered at L1
@@ -659,10 +674,10 @@ interface Events { … 1 event }
 const registerUser = entry({
   trigger: "POST /api/users",
   access: "public",
+  input: shape<SignupInput>(),
   rateLimit: "10/min",
   async handle(req): Promise<UserResponse> {
-    const input = validate<SignupInput>(req)  // fails with 422
-    // ! passes the raw request instead of `input`: role and address.zip reach the DB unvalidated
+    // ! passes req.raw instead of req.input: role and address.zip reach the DB unvalidated
     const user = await createUser(req.raw)  ▸ writes User, Address · transaction · emits UserRegistered · 1 !
       ! the listener is queued before commit: the mail can go out for a rolled-back user
     return respond(201, pick(user, "id", "name", "email"))

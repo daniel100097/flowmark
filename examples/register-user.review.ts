@@ -46,10 +46,10 @@ interface Events {
 const registerUser = entry({
   trigger: "POST /api/users", // @ routes/api.php "Route::post('/users'"
   access: "public",
+  input: shape<SignupInput>(), // @ StoreUserRequest.rules
   rateLimit: "10/min", // @ routes/api.php "throttle:10,1"
   async handle(req): Promise<UserResponse> { // @ UserController.store
-    const input = validate<SignupInput>(req) // @ StoreUserRequest.rules fails with 422
-    // ! passes the raw request instead of `input`: role and address.zip reach the DB unvalidated
+    // ! passes req.raw instead of req.input: role and address.zip reach the DB unvalidated
     const user = await createUser(req.raw) // @ "$request->all()"
     return respond(201, pick(user, "id", "name", "email")) // @ UserResource.toArray
   },

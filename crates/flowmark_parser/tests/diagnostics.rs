@@ -214,3 +214,73 @@ fn all_trigger_kinds() {
         assert_eq!(t.kind, kind, "{trigger}");
     }
 }
+
+const WITH_INPUT: &str = r#"const signup = entry({
+  trigger: "POST /signup",
+  access: "public",
+  input: shape<SignupInput>(),
+  handle(req): string {
+    return save(req.input)
+  },
+})
+"#;
+
+#[test]
+fn input_is_recorded() {
+    let doc = parse(&with_header(WITH_INPUT));
+    assert!(doc.diagnostics.is_empty(), "{:#?}", doc.diagnostics);
+    assert_eq!(doc.entries[0].input.as_deref(), Some("SignupInput"));
+    assert!(
+        doc.entries[0].options.is_empty(),
+        "input is not a plain option"
+    );
+}
+
+#[test]
+fn e025_input_must_be_a_shape() {
+    let src = with_header(&WITH_INPUT.replace("shape<SignupInput>()", "SignupInput"));
+    assert!(codes(&src).contains(&"E025"));
+}
+
+#[test]
+fn e026_no_input_on_events() {
+    let src = with_header(
+        r#"const onSignup = entry({
+  trigger: "event UserRegistered",
+  access: "system",
+  input: shape<SignupInput>(),
+  queued: true,
+  handle(e) {},
+})
+"#,
+    );
+    assert!(codes(&src).contains(&"E026"));
+}
+
+#[test]
+fn w060_declared_input_but_reads_raw() {
+    let src = with_header(&WITH_INPUT.replace("save(req.input)", "save(req.raw)"));
+    let doc = parse(&src);
+    let d = doc
+        .diagnostics
+        .iter()
+        .find(|d| d.code == "W060")
+        .expect("W060");
+    assert!(d.message.contains("req.raw"), "{}", d.message);
+    // Without a declared input, reading raw is not flagged (there is nothing better to read).
+    let src = with_header(
+        &WITH_INPUT
+            .replace("  input: shape<SignupInput>(),\n", "")
+            .replace("save(req.input)", "save(req.raw)"),
+    );
+    assert!(!codes(&src).contains(&"W060"));
+}
+
+#[test]
+fn input_cannot_be_lowered() {
+    let src = with_header(&WITH_INPUT.replace(
+        "input: shape<SignupInput>(),",
+        "input: shape<SignupInput>(), // L2",
+    ));
+    assert!(codes(&src).contains(&"E024"));
+}

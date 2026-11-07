@@ -85,14 +85,14 @@ interface Events {
 const updateServerSettings = entry({
   trigger: "rpc server.updateSettings", // Effect RPC over the WebSocket @ WsServerUpdateSettingsRpc "Rpc.make(WS_METHODS.serverUpdateSettings"
   access: { ability: "settings:write or providers:manage, by patch key" }, // @ requiredScopesForRpcCall "if (method === WS_METHODS.serverUpdateSettings) return requiredScopesForSettingsUpdate(payload);"
+  input: shape<SettingsUpdate>(), // @ WsServerUpdateSettingsRpc "patch: ServerSettingsPatch,"
   async handle(call): Promise<ServerSettings> { // @ layerWsRpc "[WS_METHODS.serverUpdateSettings]:"
-    const input = validate<SettingsUpdate>(call) // @ WsServerUpdateSettingsRpc "patch: ServerSettingsPatch,"
     // checked before the handler runs
-    for (const scope of requiredScopes(input)) authorize(scope) // @ RpcAuthorization.ts "requiredScopes.find((scope) => !scopes.includes(scope))"
+    for (const scope of requiredScopes(call.input)) authorize(scope) // @ RpcAuthorization.ts "requiredScopes.find((scope) => !scopes.includes(scope))"
     // L3 SSH device hosts that resolve to this machine are dropped
-    const patch = await dropLocalSshHosts(input.patch) // @ "remoteSshDeviceHosts(patch.deviceHosts)"
+    const patch = await dropLocalSshHosts(call.input.patch) // @ "remoteSshDeviceHosts(patch.deviceHosts)"
     // a provider instance mutation, if any, is applied after the patch in the same save
-    const settings = await saveSettings((current) => applyPatch(current, patch, input.providerInstanceMutation)) // @ "providerInstanceMutation === undefined"
+    const settings = await saveSettings((current) => applyPatch(current, patch, call.input.providerInstanceMutation)) // @ "providerInstanceMutation === undefined"
     return redactSecrets(settings) // @ "return ServerSettings.redactServerSettingsForClient(settings)"
   },
 })
