@@ -1,0 +1,18 @@
+[package]
+name = "flowmark_parser"
+description = "Parser for Flowmark (*.review.ts) files"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+tsrs_ast.workspace = true
+tsrs_core.workspace = true
+tsrs_parser.workspace = true
+tsrs_scanner.workspace = true
+serde.workspace = true
+similar.workspace = true
+
+[lib]
+# Like tsrs's own crates: the rustdoc test harness exits with 101 when linked against tsrs, even with no doctests.
+doctest = false

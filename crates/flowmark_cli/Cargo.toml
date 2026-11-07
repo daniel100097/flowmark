@@ -1,0 +1,14 @@
+[package]
+name = "flowmark_cli"
+description = "flowmark command line"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "flowmark"
+path = "src/main.rs"
+
+[dependencies]
+flowmark_parser.workspace = true
+serde_json.workspace = true

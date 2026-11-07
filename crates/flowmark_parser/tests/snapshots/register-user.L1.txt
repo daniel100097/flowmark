@@ -1,0 +1,40 @@
+// --- data ---
+
+type SignupInput = { … 4 fields }
+
+type User = { … 5 fields }  ▸ 1 ! · 1 ?
+  ! mass-assignable: a client that reaches User.create can set role=admin
+
+type Address = { userId: Id; street: string; zip: string }
+
+type UserResponse = Pick<User, "id" | "name" | "email">
+
+interface Events { … 1 event }
+
+// --- flow ---
+
+// ! untested: invalid input, role injection
+const registerUser = entry({
+  trigger: "POST /api/users",
+  access: "public",
+  rateLimit: "10/min",
+  async handle(req): Promise<UserResponse> {
+    const input = validate<SignupInput>(req)  // fails with 422
+    // ! passes the raw request instead of `input`: role and address.zip reach the DB unvalidated
+    const user = await createUser(req.raw)  ▸ writes User, Address · transaction · emits UserRegistered · 1 !
+      ! the listener is queued before commit: the mail can go out for a rolled-back user
+    return respond(201, pick(user, "id", "name", "email"))
+  },
+})
+
+// --- async ---
+
+const sendWelcomeMail = entry({
+  trigger: "event UserRegistered",
+  access: "system",
+  queued: true,
+  retries: 3,
+  handle({ user }) {
+    mail(user.email, "WelcomeMail")  // ! irreversible: a retry after a timeout can send it twice
+  },
+})

@@ -1,0 +1,15 @@
+[package]
+name = "flowmark_wasm"
+description = "Flowmark parser, checker and view model as a WebAssembly module (no wasm-bindgen)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+doctest = false
+
+[dependencies]
+flowmark_parser.workspace = true
+serde.workspace = true
+serde_json.workspace = true

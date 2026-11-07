@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flowmark</title>
+<link rel="stylesheet" href="viewer.css">
+<style>
+  html, body { margin: 0; }
+  body { min-height: 100vh; display: flex; flex-direction: column; }
+  .app-bar {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 16px;
+    border-bottom: 1px solid var(--line); background: var(--bg-soft); font-size: 13px;
+  }
+  .app-bar .brand { font-weight: 700; margin-right: 8px; }
+  .app-bar .btn, .app-bar button {
+    border: 1px solid var(--line); background: var(--bg); color: var(--fg); border-radius: 6px;
+    padding: 4px 10px; cursor: pointer; font: inherit;
+  }
+  .app-bar .btn:hover, .app-bar button:hover { border-color: var(--accent); }
+  .app-bar button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .app-bar .files { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+  #status { margin-left: auto; color: var(--muted); font-size: 12px; }
+  #status.error { color: var(--risk); }
+  .app-main { flex: 1; display: flex; min-height: 0; }
+  #editor {
+    flex: 0 0 42%; min-height: 70vh; resize: horizontal; border: 0; border-right: 1px solid var(--line);
+    padding: 12px; font-family: var(--mono); font-size: 13px; line-height: 1.5; tab-size: 2;
+    background: var(--bg); color: var(--fg); outline: none; white-space: pre; overflow: auto;
+  }
+  #viewer { flex: 1; min-width: 0; }
+  #drop {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center; z-index: 10;
+    background: color-mix(in srgb, var(--accent) 18%, transparent); border: 3px dashed var(--accent);
+    font-size: 18px; color: var(--fg);
+  }
+  body.dragging #drop { display: flex; }
+  .empty { padding: 40px 16px; color: var(--muted); }
+</style>
+</head>
+<body class="flowmark">
+<div class="app-bar">
+  <span class="brand">Flowmark</span>
+  <label class="btn" title="Open a .review.ts file">Open… <input id="open" type="file" accept=".ts" hidden></label>
+  <label class="btn" title="Open the base version to see a diff">Base for diff… <input id="open-base" type="file" accept=".ts" hidden></label>
+  <button id="swap" hidden title="Swap base and head">⇄</button>
+  <button id="clear-base" hidden title="Stop comparing">× base</button>
+  <button id="toggle-editor" title="Edit the file; the view updates as you type">Editor</button>
+  <button id="example" title="Load the example from the spec">Example</button>
+  <span class="files" id="files"></span>
+  <span id="status">loading…</span>
+</div>
+<div class="app-main">
+  <textarea id="editor" spellcheck="false" wrap="off" hidden aria-label="Flowmark source"></textarea>
+  <div id="viewer"><p class="empty">Open or drop a <code>.review.ts</code> file.</p></div>
+</div>
+<div id="drop">Drop a .review.ts file (two files: base and head)</div>
+<script src="viewer.js"></script>
+<script src="flowmark-wasm.js"></script>
+<script src="app.js"></script>
+<script>FlowmarkApp.start({ wasm: "flowmark.wasm", example: "example.review.ts" });</script>
+</body>
+</html>

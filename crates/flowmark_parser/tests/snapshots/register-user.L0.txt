@@ -1,0 +1,18 @@
+Register user
+Public signup. Creates the user and their address in one transaction,
+then sends a welcome mail through the queue.
+
+access:   public (registerUser), system (sendWelcomeMail)
+input:    SignupInput, raw request !
+writes:   User, Address (1 transaction)
+effects:  event UserRegistered → mail WelcomeMail (queued)
+output:   201 UserResponse
+shared:   createUser, also used by admin user creation
+tests:    happy path only
+
+risks
+  ! mass-assignable: a client that reaches User.create can set role=admin       → type User
+  ! untested: invalid input, role injection                                     → registerUser
+  ! passes the raw request instead of `input`: role and address.zip reach the…  → registerUser
+  ! the listener is queued before commit: the mail can go out for a rolled-ba…  → createUser
+  ! irreversible: a retry after a timeout can send it twice                     → sendWelcomeMail

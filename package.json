@@ -1,0 +1,12 @@
+{
+  "name": "flowmark-js-tests",
+  "private": true,
+  "description": "Tests for viewer/ and web/ (neither has runtime dependencies)",
+  "scripts": {
+    "test": "node --test viewer/test/*.test.mjs web/test/*.test.mjs",
+    "build:web": "./scripts/build-web.sh"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0"
+  }
+}

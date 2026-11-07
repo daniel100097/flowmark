@@ -247,6 +247,8 @@ Write a comment **above** the statement it explains, not below it.
 - A target that contains `/` or ends in a file extension is a path.
 - A path may be a unique suffix: `UserService.php` matches `app/Services/UserService.php`.
 - One comment may hold several refs: `// @ A.b @ C.d`.
+- Inside a quote, write `\"` for a double quote and `\\` for a backslash:
+  `@ "key === \"secretProviders\""`.
 - **Never line numbers.** The checker computes lines.
 
 ### 8.2 Resolution (language-neutral)
@@ -606,6 +608,9 @@ const sendWelcomeMail = entry({
 
 ### 14.2 Rendered at L0
 
+Output of `flowmark view examples/register-user.review.ts --level 0`. The `checker`
+line comes from the type check (§12.3), which the CLI does not run yet.
+
 ```
 Register user
 Public signup. Creates the user and their address in one transaction,
@@ -620,26 +625,35 @@ shared:   createUser, also used by admin user creation
 tests:    happy path only
 
 risks
-  ! mass-assignable: a client that reaches User.create can set role=admin     → type User
-  ! untested: invalid input, role injection                                    → registerUser
-  ! passes the raw request instead of `input`: role and address.zip reach …   → registerUser
-  ! the listener is queued before commit: the mail can go out for a rolled …  → createUser
-  ! irreversible: a retry after a timeout can send it twice                    → sendWelcomeMail
+  ! mass-assignable: a client that reaches User.create can set role=admin       → type User
+  ! untested: invalid input, role injection                                     → registerUser
+  ! passes the raw request instead of `input`: role and address.zip reach the…  → registerUser
+  ! the listener is queued before commit: the mail can go out for a rolled-ba…  → createUser
+  ! irreversible: a retry after a timeout can send it twice                     → sendWelcomeMail
+
 checker
-  ⚠ 'input' is declared but its value is never read                           → registerUser
+  ⚠ 'input' is declared but its value is never read                             → registerUser
 ```
 
 ### 14.3 Rendered at L1
 
-Refs are shown as link chips and left out here.
+Output of `flowmark view … --level 1`. Refs are left out (a viewer shows them as links).
 
 ```ts
+// --- data ---
+
 type SignupInput = { … 4 fields }
+
 type User = { … 5 fields }  ▸ 1 ! · 1 ?
   ! mass-assignable: a client that reaches User.create can set role=admin
+
 type Address = { userId: Id; street: string; zip: string }
+
 type UserResponse = Pick<User, "id" | "name" | "email">
+
 interface Events { … 1 event }
+
+// --- flow ---
 
 // ! untested: invalid input, role injection
 const registerUser = entry({
@@ -649,11 +663,13 @@ const registerUser = entry({
   async handle(req): Promise<UserResponse> {
     const input = validate<SignupInput>(req)  // fails with 422
     // ! passes the raw request instead of `input`: role and address.zip reach the DB unvalidated
-    const user = await createUser(req.raw)  ▸ writes User, Address · emits UserRegistered · 1 !
+    const user = await createUser(req.raw)  ▸ writes User, Address · transaction · emits UserRegistered · 1 !
       ! the listener is queued before commit: the mail can go out for a rolled-back user
     return respond(201, pick(user, "id", "name", "email"))
   },
 })
+
+// --- async ---
 
 const sendWelcomeMail = entry({
   trigger: "event UserRegistered",
@@ -706,10 +722,12 @@ one-line change in the entry:
 
 1. **Name.** "Flowmark" is a working name.
 2. **Writer skill.** Turn §10 and §13 into a skill for the AI writer.
-3. **Checker CLI.** `flowmark check`, `flowmark strip-refs`, index output (§12.4).
-4. **Viewer (JS library).** Levels, placeholders, link chips, ref status, diff mode.
-   It reads the file and the index only.
-5. **VS Code extension.** Link provider for refs, folding by level, diff view.
+3. **Checker CLI.** `flowmark check | view | parse | model | html` exist (see README). Still to do: resolving
+   refs in the reviewed code (§8.2), card ↔ body (§12.2), the type check (§12.3), `strip-refs` (§11.5).
+4. **Viewer.** Done as `viewer/viewer.js`: levels, placeholders, bubbled risks, ref chips, diff mode. It reads
+   only the view model (`flowmark model`), never the original code.
+5. **Browser and editor.** The browser app (`web/`, parser in WebAssembly) is done. Still to do: a VS Code
+   extension (link provider for refs, folding by level, diff view).
 6. **Secrets.** Track `Secret` values through the file and warn when one reaches
    `respond`, `log`, `mail` or `external`.
 7. **Several capabilities.** An overview file that lists all capabilities and their
