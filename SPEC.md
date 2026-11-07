@@ -7,7 +7,7 @@
 Files in this draft:
 
 - `SPEC.md` — this document
-- `prelude.d.ts` — the fixed vocabulary (§10)
+- `prelude.d.ts` — the fixed vocabulary (§6)
 - `examples/register-user.review.ts` — full example (§14)
 
 ---
@@ -45,7 +45,7 @@ The Flowmark file is always pseudo-TypeScript.
 | Location (repo mode) | `docs/review/<capability>.review.ts` (configurable) |
 | Generated mode | Same format, produced on demand and never committed (§11.4) |
 | First line | `// flowmark 0.1` — version marker, also used to detect Flowmark blocks |
-| Scope | One file per **capability** ("Register user", "Refund order"). A file may hold several entry points that belong together (route + listener + job). Unrelated entry points go in separate files. |
+| Scope | One file per **capability** ("Register user", "Refund order"). A file may hold several entry points that belong together (an HTTP endpoint, its event listener, its job). Unrelated entry points go in separate files. |
 | Imports/exports | None. A file is a script that only sees `prelude.d.ts` and itself. |
 | In Markdown | A ```` ```ts ```` fence whose first line is `// flowmark 0.1`. GitHub highlights it as TypeScript; a Flowmark viewer replaces it with the interactive view. |
 
@@ -58,9 +58,9 @@ Empty sections are left out.
 // flowmark 0.1
 /** review card */           §5
 // --- data ---              types: inputs, models, outputs, Events, Jobs
-// --- flow ---              entry points: route, cli, schedule
-// --- details ---           helper functions called from the flow
-// --- async ---             on(...) listeners and job(...) handlers
+// --- flow ---              entries started from outside or by time: HTTP, schedule, cli, message, …
+// --- details ---           helper functions called from the entries
+// --- async ---             entries started by this app: event listeners, jobs
 ```
 
 Inside a section, order follows the code's execution order where there is one;
@@ -89,7 +89,7 @@ The first block of every file. It answers "Do I need to look, and where?"
 
 | Field | Required | Content |
 |---|---|---|
-| `access` | yes | Who can trigger it. One item per entry point if they differ. |
+| `access` | yes | The `access` of every entry. One value when all entries share it; otherwise one item per value with entry names: `public (registerUser), system (sendWelcomeMail)`. |
 | `input` | yes | Validated input types; `raw request` if unvalidated input is used. |
 | `reads` | no | Models/stores read, when it matters (authorization, locking, cost). |
 | `writes` | yes | Models, files and cache keys written. Note transactions in `( )`. |
@@ -113,9 +113,72 @@ Rules:
 
 ## 6. Body: pseudo-TypeScript
 
-- The body may only use the prelude (§10) and functions/types defined in the same file.
-- **Entry points** are calls to `route.*`, `on`, `job`, `cli`, `schedule`.
-  Every `route` and `cli` declares `access`. `on` and `job` may set it (default `"system"`); `schedule` is always `"system"`.
+The body uses only the prelude (`prelude.d.ts`) and the functions and types
+defined in the same file.
+
+### 6.1 Entry points
+
+Every place where execution starts is one `entry()` call, assigned to a `const`
+with a domain name:
+
+```ts
+const registerUser = entry({
+  trigger: "POST /api/users", // @ routes/api.php "Route::post('/users'"
+  access: "public",
+  rateLimit: "10/min", // @ routes/api.php "throttle:10,1"
+  async handle(req): Promise<UserResponse> { // @ UserController.store
+    const input = validate<SignupInput>(req)
+    …
+  },
+})
+```
+
+**Trigger.** One string, `"<kind> <name>"`. The kind decides what `handle` receives:
+
+| Kind | Trigger | `handle` receives |
+|---|---|---|
+| HTTP, webhook | `"POST /api/users"` | `HttpRequest` |
+| App event | `"event UserRegistered"` | the payload declared in `Events` |
+| Queued job | `"job SendInvoice"` | the payload declared in `Jobs` |
+| Broker message | `"message orders.created"` | `MessageInput` (body is `Raw`) |
+| Time | `"schedule daily 03:00"` | nothing |
+| Console | `"cli users:import"` | `CliInput` |
+| GraphQL | `"query user"`, `"mutation createUser"`, `"subscription …"` | `CallInput` |
+| RPC | `"rpc UserService.Create"` | `CallInput` |
+| WebSocket | `"ws chat.message"` | `CallInput` |
+
+**Options.** One per line, in this order:
+
+| Option | For | Required | Default level |
+|---|---|---|---|
+| `trigger` | all | yes | L1, cannot be lowered |
+| `access` | all | yes; `"system"` when nobody outside can start it | L1, cannot be lowered |
+| `queued` | events | yes | L1 |
+| `rateLimit` | HTTP, GraphQL, RPC, WebSocket | no | L1 |
+| `retries`, `idempotent`, `unique` | events, jobs, messages | no | L1 |
+| `overlap`, `single` | schedule | no | L1 |
+| `guards`, `timeout` | all | no | L2 |
+| `backoff` | events, jobs, messages | no | L2 |
+| `handle` | all | yes | L1, and so are the statements directly in it |
+
+Rules:
+
+- **One fact per line.** A change to `trigger` or `access` is then a one-line diff that nobody can miss.
+- **Refs on the line they prove.** The `trigger` line links to where the trigger is
+  registered (routes file, listener map, scheduler, consumer config). The `handle`
+  line links to the handler and is the ref scope for its body (§8.3).
+- **Domain names.** Name the const for what it does (`registerUser`, `sendWelcomeMail`).
+  Viewers use the name in the risk list and in cross-references (`used by: registerUser`);
+  git shows the line in diff hunk headers.
+- **Webhooks** are HTTP entries with `access: { signature: "Stripe" }`.
+- **Unvalidated input is always `Raw`** (`req.raw`, `req.params`, `msg.raw`, `call.raw`, `cli.args`).
+  Validate it with `validate<T>()`.
+- **Type-checked.** The prelude types make `tsc` catch an unknown trigger kind, an unknown
+  event or job name, a missing `access`, a missing `queued` on an event, options that don't
+  fit the trigger kind, and payload fields that don't exist.
+
+### 6.2 Writing rules for the body
+
 - **Data goes through types.** Inputs, models, outputs, events and jobs are TypeScript
   types. Use `Pick` / `omit` so exposed fields are visible. Use `Raw` for unvalidated data.
 - **Writes and effects go through the prelude** (`db.insert<User>(…)`, `mail(…)`,
@@ -197,7 +260,7 @@ Write a comment **above** the statement it explains, not below it.
 
 ### 8.3 Ref scope
 
-A ref on the line of a `function`, entry point, or `type` is that block's **scope**.
+A ref on the line of a `function`, an entry's `handle`, or a `type` is that block's **scope**.
 Quote-only refs inside the block search in the scope's target. Scopes nest; the
 nearest one wins. A quote-only ref with no scope is an error.
 
@@ -232,7 +295,7 @@ The writer only adds markers where the default is wrong (see the level guide, §
 | Construct | Default |
 |---|---|
 | Version line, review card | L0 |
-| Entry point line and statements directly in its body | L1 |
+| `entry({ … })` line, its options, statements directly in `handle` | L1; `trigger` and `access` cannot be lowered; `guards`, `timeout`, `backoff` are L2 (§6.1) |
 | Branches whose block ends in `fail(...)` (error paths) | L2 |
 | Other branches and loops | level of the enclosing block |
 | Function definitions in `details` | L2 (call sites keep their own level) |
@@ -405,7 +468,7 @@ diff would be noise.
 - **Viewer diff mode** puts changes that matter first:
   1. changed card fields,
   2. new or removed `!` / `!?`,
-  3. changed entry points (`access`, path, options),
+  3. changed entry points (`trigger`, `access`, options),
   4. changed types (fields added or removed in inputs, outputs, events),
   5. everything else, filtered by level, with `Δ` badges on placeholders (§9.4).
 
@@ -422,18 +485,18 @@ separate from the writer's own `!`.
 1. The file parses as TypeScript (tree-sitter).
 2. Version line and card are present; required card fields are present, in order.
 3. Every ref resolves (§8.2) and has no ✗ status.
-4. Every `route` and `cli` declares `access`.
+4. Every entry is `const <name> = entry({ … })` with `trigger`, `access` and `handle`, each on its own line.
 5. No ambiguous comment attachment; no quote-only ref without a scope.
 
 ### 12.2 Card ↔ body
 
 | Card field | Compared with |
 |---|---|
-| `access` | `access` options of the entry points |
-| `input` | `validate<T>` type arguments; `raw request` required if `req.raw`, `req.params` or `req.headers` is used outside `validate` |
+| `access` | `access` of every entry |
+| `input` | `validate<T>` type arguments; `raw request` required if a `Raw` field of an entry's input (`raw`, `params`, `headers`, `meta`, `args`, `options`) is used outside `validate` |
 | `writes` | type arguments of `db.insert/update/upsert/delete`, plus `files.write/delete`, `cache.set/forget` |
 | `effects` | `emit`, `queue`, `mail`, `notify`, `external` calls by name |
-| `output` | `respond` status codes and the route's declared return type |
+| `output` | `respond` status codes and the return types of `handle` |
 
 A mismatch is a gate error.
 
@@ -464,12 +527,12 @@ original code.
   "file": "docs/review/register-user.review.ts",
   "commit": "a1b2c3d",
   "refs": [
-    { "line": 47, "ref": "StoreUserRequest.rules", "status": "ok",
+    { "line": 51, "ref": "StoreUserRequest.rules", "status": "ok",
       "target": { "path": "app/Http/Requests/StoreUserRequest.php", "start": 14, "end": 24 } }
   ],
-  "lines": [ { "line": 47, "level": 1, "categories": ["input"] } ],
-  "risks": [ { "line": 48, "kind": "!", "text": "passes the raw request instead of `input`: …" } ],
-  "findings": [ { "kind": "tsc", "line": 47, "message": "'input' is declared but its value is never read" } ]
+  "lines": [ { "line": 51, "level": 1, "categories": ["input"] } ],
+  "risks": [ { "line": 52, "kind": "!", "text": "passes the raw request instead of `input`: …" } ],
+  "findings": [ { "kind": "tsc", "line": 51, "message": "'input' is declared but its value is never read" } ]
 }
 ```
 
@@ -481,7 +544,7 @@ original code.
 2. Follow the layout (§4), the card rules (§5) and the level guide (§10).
 3. Every statement that touches access, input, data, effects or output has a ref,
    directly or through its scope.
-4. Use the prelude for every boundary; use domain names for helpers.
+4. Use `entry()` for every entry point and the prelude for every boundary; use domain names for entries and helpers.
 5. Show data with types; show exposed fields with `pick` / `Pick`.
 6. Mark risks with `!`, possible risks with `!?`, and doubts with `?`. Never guess silently.
 7. When a file exists, edit it minimally (§11.2).
@@ -502,11 +565,16 @@ the validated `input` is never used.
 
 // tested: @ tests/Feature/SignupTest.php "test_user_can_register"
 // ! untested: invalid input, role injection
-route.post("/api/users", { access: "public", rateLimit: "10/min" }, async (req): Promise<UserResponse> => { // @ routes/api.php "Route::post('/users'"
-  const input = validate<SignupInput>(req) // @ StoreUserRequest.rules fails with 422
-  // ! passes the raw request instead of `input`: role and address.zip reach the DB unvalidated
-  const user = await createUser(req.raw) // @ UserController.store "$request->all()"
-  return respond(201, pick(user, "id", "name", "email")) // @ UserResource.toArray
+const registerUser = entry({
+  trigger: "POST /api/users", // @ routes/api.php "Route::post('/users'"
+  access: "public",
+  rateLimit: "10/min", // @ routes/api.php "throttle:10,1"
+  async handle(req): Promise<UserResponse> { // @ UserController.store
+    const input = validate<SignupInput>(req) // @ StoreUserRequest.rules fails with 422
+    // ! passes the raw request instead of `input`: role and address.zip reach the DB unvalidated
+    const user = await createUser(req.raw) // @ "$request->all()"
+    return respond(201, pick(user, "id", "name", "email")) // @ UserResource.toArray
+  },
 })
 
 // --- details ---
@@ -522,6 +590,18 @@ async function createUser(data: Raw) { // @ UserService.create
     return user
   })
 }
+
+// --- async ---
+
+const sendWelcomeMail = entry({
+  trigger: "event UserRegistered", // @ EventServiceProvider "UserRegistered::class"
+  access: "system",
+  queued: true, // @ SendWelcomeMail "implements ShouldQueue"
+  retries: 3, // @ SendWelcomeMail "$tries = 3"
+  handle({ user }) { // @ SendWelcomeMail.handle
+    mail(user.email, "WelcomeMail") // ! irreversible: a retry after a timeout can send it twice
+  },
+})
 ```
 
 ### 14.2 Rendered at L0
@@ -531,7 +611,7 @@ Register user
 Public signup. Creates the user and their address in one transaction,
 then sends a welcome mail through the queue.
 
-access:   public
+access:   public (registerUser), system (sendWelcomeMail)
 input:    SignupInput, raw request !
 writes:   User, Address (1 transaction)
 effects:  event UserRegistered → mail WelcomeMail (queued)
@@ -541,12 +621,12 @@ tests:    happy path only
 
 risks
   ! mass-assignable: a client that reaches User.create can set role=admin     → type User
-  ! untested: invalid input, role injection                                    → POST /api/users
-  ! passes the raw request instead of `input`: role and address.zip reach …   → POST /api/users
+  ! untested: invalid input, role injection                                    → registerUser
+  ! passes the raw request instead of `input`: role and address.zip reach …   → registerUser
   ! the listener is queued before commit: the mail can go out for a rolled …  → createUser
-  ! irreversible: a retry after a timeout can send it twice                    → on UserRegistered
+  ! irreversible: a retry after a timeout can send it twice                    → sendWelcomeMail
 checker
-  ⚠ 'input' is declared but its value is never read                           → POST /api/users
+  ⚠ 'input' is declared but its value is never read                           → registerUser
 ```
 
 ### 14.3 Rendered at L1
@@ -562,16 +642,27 @@ type UserResponse = Pick<User, "id" | "name" | "email">
 interface Events { … 1 event }
 
 // ! untested: invalid input, role injection
-route.post("/api/users", { access: "public", rateLimit: "10/min" }, async (req): Promise<UserResponse> => {
-  const input = validate<SignupInput>(req)  // fails with 422
-  // ! passes the raw request instead of `input`: role and address.zip reach the DB unvalidated
-  const user = await createUser(req.raw)  ▸ writes User, Address · emits UserRegistered · 1 !
-    ! the listener is queued before commit: the mail can go out for a rolled-back user
-  return respond(201, pick(user, "id", "name", "email"))
+const registerUser = entry({
+  trigger: "POST /api/users",
+  access: "public",
+  rateLimit: "10/min",
+  async handle(req): Promise<UserResponse> {
+    const input = validate<SignupInput>(req)  // fails with 422
+    // ! passes the raw request instead of `input`: role and address.zip reach the DB unvalidated
+    const user = await createUser(req.raw)  ▸ writes User, Address · emits UserRegistered · 1 !
+      ! the listener is queued before commit: the mail can go out for a rolled-back user
+    return respond(201, pick(user, "id", "name", "email"))
+  },
 })
 
-on("UserRegistered", { queued: true, retries: 3 }, ({ user }) => {
-  mail(user.email, "WelcomeMail")  // ! irreversible: a retry after a timeout can send it twice
+const sendWelcomeMail = entry({
+  trigger: "event UserRegistered",
+  access: "system",
+  queued: true,
+  retries: 3,
+  handle({ user }) {
+    mail(user.email, "WelcomeMail")  // ! irreversible: a retry after a timeout can send it twice
+  },
 })
 ```
 
@@ -594,6 +685,19 @@ on("UserRegistered", { queued: true, retries: 3 }, ({ user }) => {
 +    // ! external call inside the transaction: a rollback does not undo the Stripe customer
 +    const customer = await external("Stripe").createCustomer(email) // @ BillingService.register "Customer::create("
 +    await db.insert<Subscription>({ userId: user.id, customerId: customer.id }) // @ BillingService.register "Subscription::create("
+```
+
+A change to who may call an entry is always a one-line change in the card and a
+one-line change in the entry:
+
+```diff
+- * access:   public (registerUser), system (sendWelcomeMail)
++ * access:   user (registerUser), system (sendWelcomeMail)
+  ...
+  const registerUser = entry({
+    trigger: "POST /api/users", // @ routes/api.php "Route::post('/users'"
+-   access: "public",
++   access: "user", // @ routes/api.php "middleware('auth')"
 ```
 
 ---

@@ -13,13 +13,13 @@
  * badges on collapsed blocks; the checker uses it to compare the review card
  * with the body.
  *
- *   entry        where execution starts: route, job, on, cli, schedule
+ *   entry        where execution starts: entry
  *   access       who may do this: Access, authorize
  *   input        untrusted data and its validation: Raw, validate
  *   read         reads: db.find/list/count, cache.get, files.read
  *   write        persistent changes: db.insert/update/upsert/delete, cache.set/forget, files.write/delete
  *   effect       things that leave the process: emit, queue, mail, notify, external, log
- *   output       what the caller gets: respond, redirect, return value of a route
+ *   output       what the caller gets: respond, redirect, return value of handle
  *   failure      how it stops: fail, assert
  *   consistency  what happens together or not at all: db.transaction, db.afterCommit, lock
  *   config       behaviour that depends on environment or flags: config, flag
@@ -65,6 +65,8 @@ type Access =
   | "system"
   | { role: string | string[] }
   | { ability: string }
+  /** anyone holding a valid signature, e.g. a webhook: { signature: "Stripe" } */
+  | { signature: string }
 
 /** The caller. A review file may add fields by declaring `interface Actor { ... }`. */
 interface Actor {
@@ -80,57 +82,87 @@ declare function authorize(ability: string, subject?: unknown): void
 
 // ─── entry points ────────────────────────────────────────────────────────────
 
+type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
+
+type HttpTrigger = `${HttpMethod} /${string}`
+type EventTrigger = `event ${keyof Events & string}`
+type JobTrigger = `job ${keyof Jobs & string}`
+type MessageTrigger = `message ${string}`
+type ScheduleTrigger = `schedule ${string}`
+type CliTrigger = `cli ${string}`
+type GraphqlTrigger = `query ${string}` | `mutation ${string}` | `subscription ${string}`
+type RpcTrigger = `rpc ${string}`
+type WsTrigger = `ws ${string}`
+
+/**
+ * What starts an entry point: one string, "<kind> <name>".
+ *
+ *   "POST /api/users"          HTTP request, including webhooks
+ *   "event UserRegistered"     event from this app (declared in Events)
+ *   "job SendInvoice"          queued job from this app (declared in Jobs)
+ *   "message orders.created"   message from a broker: Kafka, SQS, RabbitMQ, ...
+ *   "schedule daily 03:00"     time: cron expression or plain words
+ *   "cli users:import"         console command
+ *   "mutation createUser"      GraphQL: query / mutation / subscription
+ *   "rpc UserService.Create"   RPC: gRPC, ...
+ *   "ws chat.message"          WebSocket message
+ *
+ * @category entry
+ */
+type Trigger =
+  | HttpTrigger
+  | EventTrigger
+  | JobTrigger
+  | MessageTrigger
+  | ScheduleTrigger
+  | CliTrigger
+  | GraphqlTrigger
+  | RpcTrigger
+  | WsTrigger
+
+/** Input of an HTTP entry. */
 interface HttpRequest {
   /** body + query string, unvalidated */
   raw: Raw
   /** path parameters, unvalidated */
   params: Record<string, Raw>
   headers: Record<string, Raw>
-  /** null when access is "public" and nobody is logged in */
+  /** null when nobody is logged in */
   actor: Actor | null
   ip: string
 }
 
-interface RouteOptions {
-  /** required: who may call this */
-  access: Access
-  /** e.g. "10/min" */
-  rateLimit?: string
-  /** other middleware or guards worth knowing about, by name */
-  guards?: string[]
+/** Input of a GraphQL, RPC or WebSocket entry. */
+interface CallInput {
+  /** arguments or message body, unvalidated */
+  raw: Raw
+  /** headers or metadata, unvalidated */
+  meta: Record<string, Raw>
+  actor: Actor | null
 }
 
-type RouteHandler = (req: HttpRequest) => unknown
-
-/** @category entry */
-interface Router {
-  get(path: string, options: RouteOptions, handler: RouteHandler): void
-  post(path: string, options: RouteOptions, handler: RouteHandler): void
-  put(path: string, options: RouteOptions, handler: RouteHandler): void
-  patch(path: string, options: RouteOptions, handler: RouteHandler): void
-  delete(path: string, options: RouteOptions, handler: RouteHandler): void
+/** Input of a broker message entry. The body comes from another system. */
+interface MessageInput {
+  /** message body, unvalidated */
+  raw: Raw
+  meta: Record<string, Raw>
 }
 
-/**
- * HTTP entry point. The handler's return value is the response body (200),
- * unless it calls `respond` or `redirect`.
- * @category entry
- */
-declare const route: Router
-
-interface AsyncOptions {
-  /** default "system" */
-  access?: Access
-  /** runs later on a queue (true) or inside the caller's process (false) */
-  queued: boolean
-  retries?: number
-  backoff?: Duration
-  timeout?: Duration
-  /** at most one run per key at a time */
-  unique?: boolean
-  /** safe to run twice with the same input; the checker warns when retries > 0 without it */
-  idempotent?: boolean
+/** Input of a console command. */
+interface CliInput {
+  args: Record<string, Raw>
+  options: Record<string, Raw>
 }
+
+/** What `handle` receives, derived from the trigger. */
+type Payload<T> =
+  T extends HttpTrigger ? HttpRequest :
+  T extends `event ${infer K extends keyof Events}` ? Events[K] :
+  T extends `job ${infer K extends keyof Jobs}` ? Jobs[K] :
+  T extends MessageTrigger ? MessageInput :
+  T extends CliTrigger ? CliInput :
+  T extends GraphqlTrigger | RpcTrigger | WsTrigger ? CallInput :
+  void
 
 /**
  * Event name → payload. Each review file declares the events it uses:
@@ -144,49 +176,78 @@ interface Events {}
  */
 interface Jobs {}
 
-/**
- * Event listener.
- * @category entry
- */
-declare function on<K extends keyof Events>(
-  event: K,
-  options: AsyncOptions,
-  handler: (payload: Events[K]) => unknown,
-): void
+/** Options every entry has. */
+interface EntryBase<T extends Trigger> {
+  /** what starts it */
+  trigger: T
+  /** who may start it; required for every entry, "system" when nobody outside can */
+  access: Access
+  /** middleware, guards or interceptors worth knowing about, by name */
+  guards?: string[]
+  timeout?: Duration
+  /** the flow. For HTTP, GraphQL, RPC and WebSocket the return value is the output. */
+  handle(input: Payload<T>): unknown
+}
 
-/**
- * Queued job.
- * @category entry
- */
-declare function job<K extends keyof Jobs>(
-  name: K,
-  options: AsyncOptions,
-  handler: (payload: Jobs[K]) => unknown,
-): void
+/** HTTP, GraphQL, RPC, WebSocket */
+interface RequestOptions {
+  /** e.g. "10/min" */
+  rateLimit?: string
+}
 
-/**
- * Console command.
- * @category entry
- */
-declare function cli(
-  command: string,
-  options: { access: Access },
-  handler: (args: Record<string, Raw>) => unknown,
-): void
+/** jobs, messages, events */
+interface RetryOptions {
+  retries?: number
+  backoff?: Duration
+  /** at most one run per key at a time */
+  unique?: boolean
+  /** safe to run twice with the same input; the checker warns when retries > 0 without it */
+  idempotent?: boolean
+}
+
+interface EventOptions extends RetryOptions {
+  /**
+   * required: true = runs later on a queue;
+   * false = runs inside the emitter, before `emit` returns (and inside its transaction)
+   */
+  queued: boolean
+}
 
 interface ScheduleOptions {
   /** may a new run start while the last one is still running? */
   overlap?: boolean
   /** runs on one server only */
   single?: boolean
-  timeout?: Duration
+}
+
+/** Extra options allowed for each kind of trigger. */
+type EntryOptions<T> =
+  T extends HttpTrigger | GraphqlTrigger | RpcTrigger | WsTrigger ? RequestOptions :
+  T extends EventTrigger ? EventOptions :
+  T extends JobTrigger | MessageTrigger ? RetryOptions :
+  T extends ScheduleTrigger ? ScheduleOptions :
+  {}
+
+type EntryDef<T extends Trigger> = EntryBase<T> & EntryOptions<T>
+
+interface Entry {
+  readonly trigger: Trigger
 }
 
 /**
- * Time-based entry point. `when` is a cron expression or plain words ("daily 03:00").
+ * Declares an entry point. Always assign it to a const with a domain name:
+ *
+ *   const registerUser = entry({
+ *     trigger: "POST /api/users",
+ *     access: "public",
+ *     rateLimit: "10/min",
+ *     async handle(req): Promise<UserResponse> { ... },
+ *   })
+ *
+ * The type of `handle`'s input follows from the trigger.
  * @category entry
  */
-declare function schedule(when: string, options: ScheduleOptions, handler: () => unknown): void
+declare function entry<T extends Trigger>(def: EntryDef<T>): Entry
 
 // ─── input ───────────────────────────────────────────────────────────────────
 
@@ -301,7 +362,7 @@ declare function lock<T>(key: string, fn: () => Promise<T>, options?: { wait?: D
 
 /**
  * Sends an event to its listeners. Whether a listener runs now or later is
- * decided by the listener's `on(..., { queued })`.
+ * decided by the listener's `queued` option.
  * @category effect
  */
 declare function emit<K extends keyof Events>(event: K, payload: Events[K]): void
@@ -352,7 +413,7 @@ declare function log(level: "debug" | "info" | "warn" | "error", message: string
 // ─── output ──────────────────────────────────────────────────────────────────
 
 /**
- * Answers with a status and body. A plain `return x` in a route means 200 with body x.
+ * Answers with a status and body. A plain `return x` in an HTTP entry means 200 with body x.
  * @category output
  */
 declare function respond<T>(status: number, body?: T, headers?: Record<string, string>): T
