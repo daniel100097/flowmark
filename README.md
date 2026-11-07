@@ -8,6 +8,35 @@ a human's attention, and can be read at four detail levels.
 - [`prelude.d.ts`](prelude.d.ts) — the fixed vocabulary every review file uses
 - [`examples/`](examples/) — review files
 
+## Examples
+
+| File | What |
+|---|---|
+| [`examples/register-user.review.ts`](examples/register-user.review.ts) | The spec's example: a Laravel signup with five risks and one checker finding. |
+| [`examples/t3code-pr-25709/`](examples/t3code-pr-25709/) | A real review, written by an AI, of [pingdotgg/t3code#25709](https://github.com/pingdotgg/t3code/pull/25709) ("add and list 1Password secret providers"): [`base.review.ts`](examples/t3code-pr-25709/base.review.ts) at the PR's merge-base, [`head.review.ts`](examples/t3code-pr-25709/head.review.ts) after it, and [`pr.diff`](examples/t3code-pr-25709/pr.diff) between the two. Every ref was checked against the code at its commit. |
+
+## Screenshots
+
+The t3code review at L0 (card and risks):
+
+![t3code example, L0](docs/screenshots/t3code-L0-card.png)
+
+At L1 (flow): hidden blocks collapse, their risks stay visible, calls to hidden helpers show the helper's effects:
+
+![t3code example, L1](docs/screenshots/t3code-L1-flow.png)
+
+The PR as a diff (`flowmark html base.review.ts head.review.ts`): what changed first, then the changed lines:
+
+![t3code example, diff](docs/screenshots/t3code-diff.png)
+
+The web app (WebAssembly in the browser) with the editor open:
+
+![web app](docs/screenshots/web-app.png)
+
+The spec example at L1, with the hidden `createUser` helper expanded at its call site:
+
+![register-user, L1](docs/screenshots/register-user-L1.png)
+
 ## Layout
 
 | Path | What |
