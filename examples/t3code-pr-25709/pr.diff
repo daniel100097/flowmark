@@ -1,0 +1,89 @@
+--- base.review.ts	2026-11-07 13:06:00.238561596 +0100
++++ head.review.ts	2026-11-07 13:06:00.238857756 +0100
+@@ -4,13 +4,14 @@
+  * A client patches the environment's server settings. Scopes are checked per patch key; the patch is
+  * merged, secrets go to the secret store, settings.json is written atomically and pushed to clients.
+  *
+- * access:   scope settings:write, or providers:manage for provider keys (updateServerSettings), system (pushSettingsToClients)
+- * input:    SettingsUpdate
++ * access:   scope settings:write, or providers:manage for provider and secret provider keys (updateServerSettings), system (pushSettingsToClients)
++ * input:    SettingsUpdate, secret provider config unchecked !
+  * writes:   settings.json, secrets/*.bin (rolled back if settings.json fails)
+  * effects:  event SettingsChanged → notify settingsUpdated (clients with orchestration:read)
+  * output:   ServerSettings, secrets redacted
++ * config:   T3CODE_FEATURE_SECRETS (web build: hides the Secrets page only; the server accepts secretProviders in every build)
+  * shared:   scopesForPatch, also used for project script edits
+- * tests:    scope per patch key, per-entry merge, unreadable file refused, secret rollback
++ * tests:    scope per patch key, per-entry merge, unreadable file refused, secret rollback; secretProviders: scope, merge, envelope decode
+  */
+ 
+ // --- data ---
+@@ -28,6 +29,9 @@
+   usagePriceOverrides?: Record<string, object | null> // null removes the entry
+   usageModelAliases?: Record<string, string | null> // null removes the entry
+   deviceHosts?: DeviceHost[]
++  // only the web Secrets page writes it: add and edit send { [id]: config }, remove sends { [id]: null } @ SecretProviderDialog "updateSettings({ secretProviders: { [result.success.id]: result.success.config } })" @ EnvironmentSecretProviders "updateSettings({ secretProviders: { [id]: null } })"
++  // ! `config` is never decoded on the server: for kind one_password it stores any account, including one starting with "-" that `op --account` would read as a flag; only the web dialog checks the account, so the code that will run `op` must decode it again @ SecretProviderConfig "config: Schema.optionalKey(Schema.Unknown)" @ secretProviderFromDraft "OnePasswordSecretProviderConfig.fields.account"
++  secretProviders?: Record<SecretProviderId, SecretProviderWrite | null> // null removes the entry @ ServerSettingsPatch "Schema.Record(SecretProviderId, Schema.NullOr(SecretProviderConfigWrite))"
+ }
+ 
+ type ProviderInstanceMutation = { // @ ProviderInstanceMutation
+@@ -43,6 +47,8 @@
+   usagePriceOverrides: Record<string, object>
+   usageModelAliases: Record<string, string>
+   deviceHosts: DeviceHost[]
++  // not a secret field: sent as stored to every client with orchestration:read (pushSettingsToClients) @ mapSettingsSecrets
++  secretProviders: Record<SecretProviderId, SecretProvider> // @ ServerSettings "secretProviders: Schema.Record(SecretProviderId, SecretProviderConfig)"
+ }
+ 
+ // sensitive environment variables and secret config fields are kept in the secret store, not in settings.json @ mapSettingsSecrets
+@@ -50,6 +56,25 @@
+ type UsageLimitSource = object // @ UsageLimitSourceConfig
+ type DeviceHost = { kind: "ssh"; target: string } // target never starts with "-" @ SshDeviceHostConfig "Schema.isPattern(/^[^\s-][^\s]*$/)"
+ 
++type SecretProviderId = string // letter or digit first, then letters, digits, _ and -; max 64 @ SecretProviderSlug "Schema.isPattern(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/)"
++
++// stored envelope, final once shipped: an entry an older build cannot decode makes it run on defaults @ packages/contracts/src/settings.ts "Final once shipped"
++// tested: @ packages/contracts/src/settings.test.ts "keeps an unknown kind or a longer label from invalidating the rest of the settings"
++type SecretProvider = { // @ SecretProviderConfig
++  kind: string // a slug like SecretProviderId, e.g. one_password; unknown kinds are kept as they are @ "kind: SecretProviderKind"
++  label: string // trimmed, not empty, no max length @ "label: TrimmedNonEmptyString"
++  config?: Raw // decoded by each kind's reader, not by the server @ "config: Schema.optionalKey(Schema.Unknown)"
++}
++
++// a patch entry: label max 64, `config` still unchecked
++type SecretProviderWrite = SecretProvider // @ SecretProviderConfigWrite "label: SecretProviderLabel"
++
++// what the web dialog sends as `config` for kind one_password
++// tested: @ packages/contracts/src/settings.test.ts "rejects a 1Password account op could misread"
++type OnePasswordConfig = { // @ OnePasswordSecretProviderConfig
++  account: string // shorthand, sign-in address or ID; no spaces, never starts with "-", max 253 @ OnePasswordAccount "ONE_PASSWORD_ACCOUNT_PATTERN.test(value)"
++}
++
+ interface Events {
+   SettingsChanged: { settings: ServerSettings } // in-memory PubSub @ apps/server/src/serverSettings.ts "PubSub.unbounded<ServerSettings>()"
+ }
+@@ -84,8 +109,8 @@
+ 
+ // used by: project script edits @ requiredScopesForProjectMutation "requiredScopesForServerSettingsPatch({ defaultProjectScripts: mutation.scripts })"
+ function scopesForPatch(patch: ServerSettingsPatch): string[] { // @ requiredScopesForServerSettingsPatch
+-  // tested: @ RpcAuthorization.test.ts "does not let a settings grant create or remove providers"
+-  const providerKeys = ["providers", "providerInstances", "usageLimitSources"] // @ "changesProviders = true"
++  // tested: @ RpcAuthorization.test.ts "does not let a settings grant create or remove providers or secret providers"
++  const providerKeys = ["providers", "providerInstances", "usageLimitSources", "secretProviders"] // @ "changesProviders = true"
+   const keys = Object.keys(patch).filter((key) => patch[key as keyof ServerSettingsPatch] !== undefined) // L3 @ "if (value === undefined) continue;"
+   const changesProviders = keys.some((key) => providerKeys.includes(key))
+   const changesSettings = keys.some((key) => !providerKeys.includes(key))
+@@ -112,9 +137,11 @@
+   })
+ }
+ 
+-// per entry (null removes an id, a value replaces that id's entry): usageLimitSources, usagePriceOverrides, usageModelAliases @ applyServerSettingsPatch "mergeSettingsEntries("
++// per entry (null removes an id, a value replaces that id's entry): usageLimitSources, secretProviders, usagePriceOverrides, usageModelAliases @ applyServerSettingsPatch "mergeSettingsEntries("
++// !? add and edit send the same { [id]: config }: an add whose id another client has just taken replaces that provider; the duplicate-name check runs only in the web dialog @ secretProviderFromDraft "A secret provider with this name exists."
+ // every other key is deep-merged into the current settings @ applyServerSettingsPatch "deepMerge(current, patchForMerge)"
+ // tested: @ packages/shared/src/serverSettings.test.ts "upserts and removes usageLimitSources per entry so concurrent edits cannot clobber"
++// tested: @ packages/shared/src/serverSettings.test.ts "upserts and removes secretProviders per entry so concurrent edits cannot clobber"
+ declare function applyPatch(current: ServerSettings, patch: ServerSettingsPatch, mutation?: ProviderInstanceMutation): ServerSettings // @ applyServerSettingsPatch
+ 
+ // sensitive values become { value: "", redacted: true }; every other field is sent as stored
