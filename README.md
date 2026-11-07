@@ -25,11 +25,12 @@ At L1 (flow): hidden blocks collapse, their risks stay visible, calls to hidden 
 
 ![t3code example, L1](docs/screenshots/t3code-L1-flow.png)
 
-The PR as a diff (`flowmark html base.review.ts head.review.ts`): what changed first, then the changed lines:
+The PR as a diff (`flowmark html base.review.ts head.review.ts`): **Changes | Before | After** in the header,
+what changed first, then the changed lines:
 
 ![t3code example, diff](docs/screenshots/t3code-diff.png)
 
-The web app (WebAssembly in the browser) with the editor open:
+The web app (WebAssembly in the browser) with the t3code PR from its **Examples** menu:
 
 ![web app](docs/screenshots/web-app.png)
 
@@ -56,7 +57,7 @@ flowmark=./target/release/flowmark
 $flowmark check examples/register-user.review.ts           # diagnostics, exit code 1 on errors
 $flowmark view  examples/register-user.review.ts --level 1 # text view, levels 0-3
 $flowmark html  examples/register-user.review.ts -o out.html          # interactive viewer, one file
-$flowmark html  base.review.ts head.review.ts -o diff.html            # diff mode
+$flowmark html  base.review.ts head.review.ts -o pr.html              # diff: Changes | Before | After
 $flowmark parse examples/register-user.review.ts           # document as JSON
 $flowmark model examples/register-user.review.ts           # view model JSON (what the viewer renders)
 ```
@@ -72,9 +73,10 @@ offline and can be attached to a pull request.
 - **Helpers** hidden at the current level show their effects at the call site and can be expanded in place.
 - **Refs** are chips with target, quote and scope; click to copy.
 - **Prelude calls** are coloured by category (access, input, read, write, effect, output, ...).
-- **Diff mode** (two files): a "What changed" summary first (card fields, risks, entries, types — SPEC §11.5),
-  then the file with added and removed lines. "Show changes" (key `c`) shows changed lines at every level;
-  collapsed blocks show `Δn` for the changes inside. `Esc` collapses everything again.
+- **Diff mode** (two files): **Changes | Before | After** in the header (keys `d`, `b`, `a`). Changes shows a
+  "What changed" summary first (card fields, risks, entries, types — SPEC §11.5), then the file with added and
+  removed lines; Before and After show each file on its own. "Show changes" (key `c`) shows changed lines at
+  every level; collapsed blocks show `Δn` for the changes inside. `Esc` collapses everything again.
 
 ## Web app (WebAssembly)
 
@@ -83,8 +85,9 @@ offline and can be attached to a pull request.
 python3 -m http.server -d web/dist 8080   # any static server; file:// cannot load .wasm
 ```
 
-Open `http://localhost:8080`, then open or drop a `.review.ts` file (two files = base and head),
-or edit it in the built-in editor: it is re-checked and re-rendered as you type. Nothing leaves the browser.
+Open `http://localhost:8080`, then pick an example from **Examples…** (the t3code PR opens as a diff),
+open or drop a `.review.ts` file (two files = base and head), or edit it in the built-in editor:
+it is re-checked and re-rendered as you type. Nothing leaves the browser.
 
 URL parameters: `?src=<url>` loads a file, `&base=<url>` compares against a base version, `&level=0..3`.
 Raw GitHub URLs work, so a pull request can link straight to its review file.

@@ -78,7 +78,13 @@ test("the web app loads, checks as you type and shows diagnostics", async () => 
       : new Response("not found", { status: 404 });
   };
   for (const f of ["viewer.js", "flowmark-wasm.js", "app.js"]) w.eval(readFileSync(path.join(dist, f), "utf8"));
-  await w.FlowmarkApp.start({ wasm: wasmBytes(), example: "example.review.ts" });
+  await w.FlowmarkApp.start({
+    wasm: wasmBytes(),
+    examples: [
+      { label: "Register user", src: "examples/register-user.review.ts" },
+      { label: "t3code", src: "examples/t3code-pr-25709/head.review.ts", base: "examples/t3code-pr-25709/base.review.ts" },
+    ],
+  });
 
   const doc = w.document;
   assert.match(doc.getElementById("status").textContent, /^1 warning ·/);
@@ -91,4 +97,14 @@ test("the web app loads, checks as you type and shows diagnostics", async () => 
   await new Promise((r) => setTimeout(r, 300));
   assert.match(doc.getElementById("status").textContent, /^1 error, 1 warning ·/);
   assert.equal(doc.querySelector(".fm-count.error").textContent.trim(), "1 ✗ 1 ⚠");
+
+  // The examples menu loads the t3code PR as a diff.
+  const menu = doc.getElementById("example");
+  assert.deepEqual([...menu.options].map((o) => o.textContent), ["Examples…", "Register user", "t3code"]);
+  menu.value = "1";
+  menu.dispatchEvent(new w.Event("change"));
+  await new Promise((r) => setTimeout(r, 300));
+  assert.match(doc.getElementById("files").textContent, /base\.review\.ts → head\.review\.ts/);
+  assert.ok(doc.querySelector(".fm-changes"), "diff summary shown");
+  assert.equal(doc.querySelectorAll(".fm-modes button").length, 3);
 });

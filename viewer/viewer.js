@@ -34,10 +34,19 @@
   class Viewer {
     constructor(root, model, opts) {
       this.root = root;
-      this.m = model;
-      this.diff = !!model.changes;
+      // A diff model carries both files ("sides"): the viewer can switch between the three views.
+      this.bundle = model.sides ? model : null;
+      this.mode = "changes";
       const fromHash = /^#L([0-3])$/.exec(global.location ? global.location.hash : "");
       this.level = fromHash ? Number(fromHash[1]) : opts.level ?? 1;
+      this.load(model);
+      this.onKey = (e) => this.key(e);
+      document.addEventListener("keydown", this.onKey);
+    }
+
+    load(model) {
+      this.m = model;
+      this.diff = !!model.changes;
       this.expanded = new Set();
       this.inline = new Set();
       this.showChanges = this.diff;
@@ -54,8 +63,14 @@
         for (let i = b.first_row; i <= b.last_row; i++) if (model.rows[i].change && model.rows[i].kind !== "blank") n++;
         return n;
       });
-      this.onKey = (e) => this.key(e);
-      document.addEventListener("keydown", this.onKey);
+    }
+
+    /// "changes" (the diff), "before" (base file) or "after" (head file).
+    setMode(mode) {
+      if (!this.bundle || mode === this.mode) return;
+      this.mode = mode;
+      this.load(mode === "changes" ? this.bundle : mode === "before" ? this.bundle.sides.base : this.bundle.sides.head);
+      this.render();
     }
 
     destroy() {
@@ -69,6 +84,8 @@
       else if (e.key === "c" && this.diff) {
         this.showChanges = !this.showChanges;
         this.render();
+      } else if (this.bundle && (e.key === "d" || e.key === "b" || e.key === "a")) {
+        this.setMode({ d: "changes", b: "before", a: "after" }[e.key]);
       } else if (e.key === "Escape") {
         this.expanded.clear();
         this.inline.clear();
@@ -157,6 +174,22 @@
           h("strong", {}, m.title || m.file),
           h("span", { class: "fm-file" }, m.base_file ? `${m.base_file} → ${m.file}` : m.file),
         ),
+        this.bundle &&
+          h(
+            "nav",
+            { class: "fm-levels fm-modes", "aria-label": "Diff" },
+            [
+              ["changes", "Changes", "The pull request: what changed, then the file with added and removed lines (key d)"],
+              ["before", "Before", "The file before the change (key b)"],
+              ["after", "After", "The file after the change (key a)"],
+            ].map(([mode, label, title]) =>
+              h(
+                "button",
+                { class: mode === this.mode ? "active" : "", title, onclick: () => this.setMode(mode) },
+                label,
+              ),
+            ),
+          ),
         h(
           "nav",
           { class: "fm-levels", "aria-label": "Detail level" },

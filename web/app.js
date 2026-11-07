@@ -1,6 +1,10 @@
 // The Flowmark web app: parse and check in WebAssembly, render with viewer.js.
 //
-//   FlowmarkApp.start({ wasm: "flowmark.wasm", example: "example.review.ts" })
+//   FlowmarkApp.start({
+//     wasm: "flowmark.wasm",
+//     examples: [{ label: "Register user", src: "examples/register-user.review.ts" },
+//                { label: "A PR (diff)", src: "head.review.ts", base: "base.review.ts" }],
+//   })
 //
 // URL parameters: ?src=<url of a .review.ts> &base=<url of the base version> &level=<0-3>
 (function (global) {
@@ -19,6 +23,7 @@
 
     async start(opts) {
       this.opts = opts || {};
+      this.examples = this.opts.examples || (this.opts.example ? [{ label: "Example", src: this.opts.example }] : []);
       const q = new URLSearchParams(global.location.search);
       if (q.has("level")) this.level = Math.max(0, Math.min(3, Number(q.get("level")) || 0));
       this.bind();
@@ -33,7 +38,8 @@
           if (q.has("base")) this.base = await fetchText(q.get("base"));
         } else {
           const saved = global.localStorage && global.localStorage.getItem(STORE);
-          this.head = saved ? JSON.parse(saved) : this.opts.example ? await fetchText(this.opts.example) : null;
+          if (saved) this.head = JSON.parse(saved);
+          else if (this.examples.length) await this.loadExample(this.examples[0]);
         }
       } catch (e) {
         this.status(e.message, true);
@@ -72,11 +78,14 @@
         clearTimeout(this.timer);
         this.timer = setTimeout(() => this.render(), 200);
       });
-      $("example").addEventListener("click", async () => {
-        if (!this.opts.example) return;
+      const menu = $("example");
+      this.examples.forEach((ex, i) => menu.append(new Option(ex.label, String(i))));
+      menu.addEventListener("change", async () => {
+        const ex = this.examples[Number(menu.value)];
+        menu.value = "";
+        if (!ex) return;
         try {
-          this.head = await fetchText(this.opts.example);
-          this.base = null;
+          await this.loadExample(ex);
           this.render(true);
         } catch (e) {
           this.status(e.message, true);
@@ -107,6 +116,11 @@
         }
         this.render(true);
       });
+    },
+
+    async loadExample(ex) {
+      this.head = await fetchText(ex.src);
+      this.base = ex.base ? await fetchText(ex.base) : null;
     },
 
     async render(syncEditor) {

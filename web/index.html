@@ -13,7 +13,7 @@
     border-bottom: 1px solid var(--line); background: var(--bg-soft); font-size: 13px;
   }
   .app-bar .brand { font-weight: 700; margin-right: 8px; }
-  .app-bar .btn, .app-bar button {
+  .app-bar .btn, .app-bar button, .app-bar select {
     border: 1px solid var(--line); background: var(--bg); color: var(--fg); border-radius: 6px;
     padding: 4px 10px; cursor: pointer; font: inherit;
   }
@@ -46,7 +46,7 @@
   <button id="swap" hidden title="Swap base and head">⇄</button>
   <button id="clear-base" hidden title="Stop comparing">× base</button>
   <button id="toggle-editor" title="Edit the file; the view updates as you type">Editor</button>
-  <button id="example" title="Load the example from the spec">Example</button>
+  <select id="example" title="Load an example"><option value="">Examples…</option></select>
   <span class="files" id="files"></span>
   <span id="status">loading…</span>
 </div>
@@ -58,6 +58,18 @@
 <script src="viewer.js"></script>
 <script src="flowmark-wasm.js"></script>
 <script src="app.js"></script>
-<script>FlowmarkApp.start({ wasm: "flowmark.wasm", example: "example.review.ts" });</script>
+<script>
+FlowmarkApp.start({
+  wasm: "flowmark.wasm",
+  examples: [
+    { label: "Register user (spec example)", src: "examples/register-user.review.ts" },
+    {
+      label: "t3code PR #25709 (diff)",
+      src: "examples/t3code-pr-25709/head.review.ts",
+      base: "examples/t3code-pr-25709/base.review.ts",
+    },
+  ],
+});
+</script>
 </body>
 </html>

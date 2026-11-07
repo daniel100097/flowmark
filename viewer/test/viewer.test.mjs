@@ -132,6 +132,25 @@ test("diff mode", () => {
   const toggle = el.querySelector(".helper-toggle").textContent;
   assert.match(toggle, /calls Stripe\.createCustomer/);
   assert.match(toggle, /Δ2/);
+
+  // Changes | Before | After
+  const modes = () => [...el.querySelectorAll(".fm-modes button")];
+  assert.deepEqual(modes().map((b) => b.textContent), ["Changes", "Before", "After"]);
+  click(modes()[2]);
+  assert.equal(viewer.mode, "after");
+  assert.equal(el.querySelectorAll(".row.added, .row.removed").length, 0, "After is the head file alone");
+  assert.equal(el.querySelector(".fm-changes"), null);
+  click(modes()[1]);
+  assert.match(el.querySelector(".fm-levels:not(.fm-modes) .active").textContent, /L1/, "the level is kept");
+  assert.match(code(el), /access: "public"/, "Before is the base file");
+  viewer.key({ key: "d", target: null });
+  assert.equal(viewer.mode, "changes");
+  assert.ok(el.querySelector(".fm-changes"));
+});
+
+test("a single file has no Changes/Before/After switch", () => {
+  const { el } = mount(model(EXAMPLE), 1);
+  assert.equal(el.querySelector(".fm-modes"), null);
 });
 
 test("section headings follow their content", () => {

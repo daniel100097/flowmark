@@ -32,6 +32,16 @@ pub struct ViewModel {
     pub risks: Vec<RiskItem>,
     pub diagnostics: Vec<DiagItem>,
     pub changes: Option<Changes>,
+    /// Diff mode only: the base and head files on their own, so a viewer can switch between
+    /// "Changes", "Before" and "After".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sides: Option<Box<Sides>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Sides {
+    pub base: ViewModel,
+    pub head: ViewModel,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -271,6 +281,10 @@ pub fn build_diff(
         Some(changes),
     );
     model.base_file = Some(base_file.to_string());
+    model.sides = Some(Box::new(Sides {
+        base: build(base, base_source, base_file),
+        head: build(head, head_source, head_file),
+    }));
 
     // Risks that only exist in the base file.
     let head_risks: HashSet<String> = head.risks.iter().map(risk_key).collect();
@@ -492,6 +506,7 @@ fn assemble(
         risks,
         diagnostics,
         changes,
+        sides: None,
     }
 }
 
@@ -1077,5 +1092,9 @@ mod tests {
                 .contains(&"calls Stripe.createCustomer".to_string())
         );
         assert!(m.risks.iter().any(|r| r.change == Some(Change::Added)));
+        let sides = m.sides.as_ref().unwrap();
+        assert!(sides.base.changes.is_none() && sides.head.changes.is_none());
+        assert_eq!(sides.base.rows.len(), EXAMPLE.lines().count());
+        assert_eq!(sides.head.rows.len(), head.lines().count());
     }
 }

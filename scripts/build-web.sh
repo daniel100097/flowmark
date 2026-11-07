@@ -16,5 +16,7 @@ if command -v wasm-opt >/dev/null 2>&1; then
 fi
 cp web/index.html web/app.js web/flowmark-wasm.js "$out/"
 cp viewer/viewer.js viewer/viewer.css "$out/"
-cp examples/register-user.review.ts "$out/example.review.ts"
+mkdir -p "$out/examples/t3code-pr-25709"
+cp examples/register-user.review.ts "$out/examples/"
+cp examples/t3code-pr-25709/base.review.ts examples/t3code-pr-25709/head.review.ts "$out/examples/t3code-pr-25709/"
 echo "built $out ($(wc -c < "$out/flowmark.wasm") bytes of wasm)"

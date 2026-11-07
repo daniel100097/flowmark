@@ -77,6 +77,7 @@
 .fm-levels button { border: 0; background: transparent; color: var(--fg); padding: 6px 12px; border-right: 1px solid var(--line); }
 .fm-levels button:last-child { border-right: 0; }
 .fm-levels button.active { background: var(--accent); color: #fff; }
+.fm-modes button.active { background: var(--fg); color: var(--bg); }
 .fm-counts { display: flex; gap: 8px; align-items: center; }
 .fm-count { border: 1px solid var(--line); background: var(--bg-soft); color: var(--fg); border-radius: 999px; padding: 3px 10px; }
 .fm-count.risk { color: var(--risk); }
