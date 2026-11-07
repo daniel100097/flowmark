@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust toolchain (rust-toolchain.toml) and wasm target
+        run: |
+          rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" \
+            --profile minimal --component clippy,rustfmt
+          rustup target add wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy -p flowmark_wasm --target wasm32-unknown-unknown -- -D warnings
+      - run: cargo test
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build the web app (WebAssembly)
+        run: ./scripts/build-web.sh
+
+      - run: npm ci
+      - run: npm test
+
+      - name: Type-check the examples against the prelude
+        run: |
+          for f in examples/register-user.review.ts examples/t3code-pr-25709/*.review.ts; do
+            echo "tsc $f"
+            npx -y -p typescript@5 tsc --noEmit --strict --noUnusedLocals --lib es2022 --target es2022 prelude.d.ts "$f"
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flowmark-web
+          path: web/dist
+
+  binaries:
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/build.yml

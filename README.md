@@ -1,5 +1,7 @@
 # Flowmark
 
+[![CI](https://github.com/daniel100097/flowmark/actions/workflows/ci.yml/badge.svg)](https://github.com/daniel100097/flowmark/actions/workflows/ci.yml)
+
 A code review and documentation language: AI-written, human-read pseudo-TypeScript
 that explains what code does, links every claim to the real code, marks what needs
 a human's attention, and can be read at four detail levels.
@@ -72,6 +74,21 @@ file", or run `/flowmark-review`. The skill installs the CLI itself if it is mis
 | `crates/flowmark_wasm` | The same parser as a WebAssembly module (plain C-ABI exports, no imports, no wasm-bindgen). |
 | `viewer/` | The interactive viewer: `viewer.js` + `viewer.css`, no dependencies, no build step. |
 | `web/` | The browser app: open or drop a file, it is parsed and checked in WebAssembly and shown in the viewer. |
+
+## Install
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/daniel100097/flowmark/main/scripts/install.sh | sh
+```
+
+This downloads the binary for Linux or macOS (x86_64 or ARM) from the latest
+[release](https://github.com/daniel100097/flowmark/releases) into `~/.local/bin`, and builds it with cargo
+when there is no download. Windows binaries are on the releases page. From source:
+`cargo install --locked --git https://github.com/daniel100097/flowmark flowmark_cli`.
+
+CI (`.github/workflows/`) runs all tests on every push and pull request, and builds the binaries for
+Linux x86_64/ARM64, macOS Intel/Apple Silicon and Windows on every push to `main` (as workflow artifacts).
+Pushing a tag such as `v0.1.0` publishes a release with those binaries, their SHA-256 sums and the web app.
 
 ## CLI
 

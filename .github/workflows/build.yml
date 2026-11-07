@@ -1,0 +1,82 @@
+# Builds the `flowmark` binary for every supported platform. Called by ci.yml (artifacts only)
+# and release.yml (also uploads to the GitHub Release named by `release-tag`).
+name: Build binaries
+
+on:
+  workflow_call:
+    inputs:
+      release-tag:
+        description: Upload the archives to this release (empty = artifacts only)
+        type: string
+        default: ""
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-22.04 }
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-22.04-arm }
+          - { target: x86_64-apple-darwin, os: macos-latest }
+          - { target: aarch64-apple-darwin, os: macos-latest }
+          - { target: x86_64-pc-windows-msvc, os: windows-latest }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: |
+          rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" --profile minimal
+          rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked -p flowmark_cli --target ${{ matrix.target }}
+
+      - name: Smoke test
+        if: matrix.target != 'x86_64-apple-darwin'
+        run: |
+          bin=target/${{ matrix.target }}/release/flowmark
+          # The example has exactly one finding (a warning), so check exits 0.
+          "$bin" check examples/register-user.review.ts
+          "$bin" html examples/t3code-pr-25709/base.review.ts examples/t3code-pr-25709/head.review.ts -o pr.html
+          test -s pr.html
+
+      - name: Package
+        id: package
+        run: |
+          name=flowmark-${{ matrix.target }}
+          dir=target/${{ matrix.target }}/release
+          if [[ "${{ matrix.target }}" == *windows* ]]; then
+            archive=$name.zip
+            7z a "$archive" "./$dir/flowmark.exe" > /dev/null
+          else
+            archive=$name.tar.gz
+            tar czf "$archive" -C "$dir" flowmark
+          fi
+          if command -v sha256sum > /dev/null; then sha256sum "$archive" > "$archive.sha256"; else shasum -a 256 "$archive" > "$archive.sha256"; fi
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flowmark-${{ matrix.target }}
+          path: |
+            ${{ steps.package.outputs.archive }}
+            ${{ steps.package.outputs.archive }}.sha256
+
+      - name: Upload to the release
+        if: inputs.release-tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ inputs.release-tag }}" \
+            "${{ steps.package.outputs.archive }}" "${{ steps.package.outputs.archive }}.sha256" \
+            --clobber --repo "${{ github.repository }}"

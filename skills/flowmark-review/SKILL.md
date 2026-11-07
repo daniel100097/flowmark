@@ -20,7 +20,7 @@ does not settle a question.
 ## Tools
 
 ```sh
-command -v flowmark || cargo install --locked --git https://github.com/daniel100097/flowmark flowmark_cli
+command -v flowmark || curl -fsSL https://raw.githubusercontent.com/daniel100097/flowmark/main/scripts/install.sh | sh
 flowmark check <file>              # structure, entries, comments, refs syntax, levels
 flowmark view  <file> --level 1    # what a reader sees at L1 (also 0, 2, 3)
 flowmark html  <file> -o out.html  # interactive page; with base and head: a PR diff
@@ -28,8 +28,10 @@ npx -y -p typescript@5 tsc --noEmit --strict --noUnusedLocals --lib es2022 --tar
   <this-skill-dir>/prelude.d.ts <file>          # type check against the prelude
 ```
 
-If you cannot install the CLI (no Rust ≥ 1.99) or run tsc (no Node), do those checks by hand and
-say so in your report.
+The install script downloads a prebuilt binary from the latest GitHub Release (Linux, macOS) into
+`~/.local/bin`, or builds it with cargo (Rust ≥ 1.99). On Windows, download it from
+https://github.com/daniel100097/flowmark/releases. If you cannot get the CLI or run tsc (no Node), do
+those checks by hand and say so in your report.
 
 ## Workflow
 
