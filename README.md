@@ -38,6 +38,31 @@ The spec example at L1, with the hidden `createUser` helper expanded at its call
 
 ![register-user, L1](docs/screenshots/register-user-L1.png)
 
+## Skill (for the AI writer)
+
+[`skills/flowmark-review/`](skills/flowmark-review/SKILL.md) is a Claude Code skill that writes and
+updates review files. It covers:
+- the workflow (scope, read the code, write, or edit minimally)
+- the layout, entries, body rules, refs and detail levels
+- PR mode (base and head files)
+- a self-check loop with `flowmark check` and the type check
+- what to report at the end
+
+It ships the prelude, both examples and the level guide. `scripts/sync-skill.sh` copies them from the
+repo, and `npm test` fails when the copies are out of date.
+
+Install it for every project, or for one repo:
+
+```sh
+git clone https://github.com/daniel100097/flowmark
+cp -r flowmark/skills/flowmark-review ~/.claude/skills/        # every project
+cp -r flowmark/skills/flowmark-review <repo>/.claude/skills/   # one repo
+```
+
+Then ask, for example, "write a flowmark review for PR 123" or "document how signup works as a flowmark
+file", or run `/flowmark-review`. The skill installs the CLI itself if it is missing
+(`cargo install --locked --git https://github.com/daniel100097/flowmark flowmark_cli`).
+
 ## Layout
 
 | Path | What |

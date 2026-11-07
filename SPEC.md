@@ -197,6 +197,11 @@ Rules:
   `external("Stripe").charge(…)`), so viewers and the checker can find them.
 - **Domain names.** Helpers are named for what they do in the domain (`createUser`,
   `chargeOrder`), not after the real class or method. The real names go in refs.
+- **Opaque helpers.** A pure helper whose body doesn't matter to the review (a merge, a mapping,
+  a redaction) can be declared instead of written out:
+  `declare function redactSecrets(settings: ServerSettings): ServerSettings // @ redactServerSettingsForClient`.
+  It is a helper like any other: L2 by default, call sites show its badges, and its own ref scopes the
+  comments attached to it. Helpers that write or have effects are always written out.
 - **Framework terms only in comments.** `$fillable`, `FormRequest`, `@Transactional`, …
   appear in comments, never as code.
 - **One statement per line.** Long calls stay on one line; the viewer wraps.
@@ -736,7 +741,7 @@ one-line change in the entry:
 ## 15. Open questions and roadmap
 
 1. **Name.** "Flowmark" is a working name.
-2. **Writer skill.** Turn §10 and §13 into a skill for the AI writer.
+2. **Writer skill.** Done: `skills/flowmark-review/` (§10 is shipped as its level guide).
 3. **Checker CLI.** `flowmark check | view | parse | model | html` exist (see README). Still to do: resolving
    refs in the reviewed code (§8.2), card ↔ body (§12.2), the type check (§12.3), `strip-refs` (§11.5).
 4. **Viewer.** Done as `viewer/viewer.js`: levels, placeholders, bubbled risks, ref chips, diff mode. It reads

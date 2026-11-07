@@ -1,10 +1,11 @@
 {
   "name": "flowmark-js-tests",
   "private": true,
-  "description": "Tests for viewer/ and web/ (neither has runtime dependencies)",
+  "description": "Tests for viewer/, web/ and skills/ (none of them has runtime dependencies)",
   "scripts": {
-    "test": "node --test viewer/test/*.test.mjs web/test/*.test.mjs",
-    "build:web": "./scripts/build-web.sh"
+    "test": "node --test viewer/test/*.test.mjs web/test/*.test.mjs skills/test/*.test.mjs",
+    "build:web": "./scripts/build-web.sh",
+    "sync:skill": "./scripts/sync-skill.sh"
   },
   "devDependencies": {
     "jsdom": "^26.1.0"
