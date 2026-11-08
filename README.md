@@ -61,8 +61,9 @@ cp -r flowmark/skills/flowmark-review ~/.claude/skills/        # every project
 cp -r flowmark/skills/flowmark-review <repo>/.claude/skills/   # one repo
 ```
 
-[`evals/`](evals/README.md) measures how well it works: 4 codebases with planted bugs, a grader, and
-A/B results (the current short version found 11 of 11 planted bugs with 196 of 196 refs verified).
+[`evals/`](evals/README.md) measures how well it works: 7 codebases (planted bugs, an existing review to
+update, a multi-file service with traps, clean code for false alarms), a grader, and results for Opus and
+Haiku.
 
 Then ask, for example, "write a flowmark review for PR 123" or "document how signup works as a flowmark
 file", or run `/flowmark-review`. The skill installs the CLI itself if it is missing
@@ -150,7 +151,7 @@ The module is 2.0 MB (530 KB gzipped). tsrs never frees parsed syntax trees, so 
 | §12.1 gate 4 | `const <name> = entry({ trigger, access, handle })`, one option per line, known trigger kinds, option order, `input: shape<T>()` only where input comes from outside | yes (`E020`–`E026`, `W024`, `W025`) |
 | §12.3 | an entry declares `input`, but `handle` reads `req.raw` | yes (`W060`) |
 | §7, §8.3 | comment grammar, quote-only refs need a scope, attachment | yes (`E030`, `E031`, `W040`) |
-| §9.3 | level markers without effect; `trigger`/`access`/`input` cannot be lowered | yes (`W050`–`W052`, `E024`) |
+| §9.3 | level markers without effect or hiding a write/effect; `trigger`/`access`/`input` cannot be lowered | yes (`W050`–`W053`, `E024`) |
 | §10.3 | L1/L2 budgets | yes (`W070`, `W071`) |
 | §3 | no imports/exports | yes (`E080`) |
 | §12.1 gate 3 | refs resolve in the reviewed code | not yet (tree-sitter) |

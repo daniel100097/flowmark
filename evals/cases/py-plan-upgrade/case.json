@@ -1,0 +1,72 @@
+{
+  "id": "py-plan-upgrade",
+  "prompt": "Write a Flowmark review of how upgrading a plan works in this billing service (POST /billing/upgrade), including everything that happens afterwards because of it.",
+  "truth": {
+    "entries": [
+      {
+        "trigger": "^POST /billing/upgrade$",
+        "access": "user"
+      },
+      {
+        "trigger": "plan\\.upgraded|send_receipt|receipt"
+      },
+      {
+        "trigger": "plan\\.upgraded|sync_crm|crm"
+      }
+    ],
+    "input": [
+      "UpgradeRequest|Upgrade"
+    ],
+    "writes": [
+      "Subscription",
+      "Invoice"
+    ],
+    "effects": [
+      "Paddle",
+      "receipt|smtp|mail",
+      "HubSpot|crm"
+    ],
+    "risks": [
+      {
+        "id": "non-public-plan",
+        "any": [
+          [
+            "public|internal|hidden|archiv|not (offered|listed)|unlisted|any plan|private"
+          ]
+        ]
+      },
+      {
+        "id": "password-hash-to-crm",
+        "any": [
+          [
+            "password|hash|secret|every column|all columns|to_dict",
+            "crm|hubspot|external|third"
+          ]
+        ]
+      },
+      {
+        "id": "trial-downgrades-paid",
+        "any": [
+          [
+            "trial",
+            "downgrad|expire|free|revert|back to"
+          ]
+        ]
+      }
+    ],
+    "bonus_risks": [
+      {
+        "id": "charge-before-commit",
+        "any": [
+          [
+            "commit|rollback|roll back|refund",
+            "charge|paddle"
+          ]
+        ]
+      }
+    ],
+    "noise": [
+      "legacy/"
+    ]
+  }
+}

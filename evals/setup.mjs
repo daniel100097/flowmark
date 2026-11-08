@@ -3,7 +3,8 @@
 //   node evals/setup.mjs <case-id> <dest>
 //
 // A normal case is a copy of evals/cases/<id>/repo. A PR case is a git repo with two commits: the base
-// case's code, then the PR (evals/cases/<id>/head copied over it).
+// case's code (plus `base_extra`, e.g. an existing review file), then the PR (evals/cases/<id>/head copied
+// over it).
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
@@ -27,9 +28,10 @@ const git = (...args) =>
 
 if (spec.pr) {
   cpSync(path.join(here, "cases", spec.pr.base, "repo"), dest, { recursive: true });
+  if (spec.pr.base_extra) cpSync(path.join(here, "cases", caseId, spec.pr.base_extra), dest, { recursive: true });
   git("init", "-q", "-b", "main");
   git("add", "-A");
-  git("commit", "-q", "-m", "Password reset");
+  git("commit", "-q", "-m", "Initial");
   cpSync(path.join(here, "cases", caseId, "head"), dest, { recursive: true });
   git("add", "-A");
   git("commit", "-q", "-m", spec.pr.title);

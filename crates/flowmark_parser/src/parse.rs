@@ -1243,6 +1243,8 @@ impl Builder {
             unit.level = base.max(parent_level);
         }
 
+        self.check_markers_hiding_actions();
+
         // Comment levels.
         let section_levels: Vec<Option<u8>> = self
             .doc
@@ -1339,10 +1341,31 @@ impl Builder {
     // ─── risks ──────────────────────────────────────────────────────────────
 
     fn collect_risks(&mut self) {
-        for c in &self.doc.comments {
+        let column = |c: &Comment| c.span.start - self.idx.line_start(c.span.start_line);
+        for (i, c) in self.doc.comments.iter().enumerate() {
             let Some(sigil) = c.sigil.filter(|s| s.is_risk()) else {
                 continue;
             };
+            // A long risk continues on the following plain `//` lines (same column, no sigil, tag or marker).
+            let mut text = c.text.clone();
+            let mut last = c;
+            for next in &self.doc.comments[i + 1..] {
+                let continues = c.placement == Placement::OwnLine
+                    && next.placement == Placement::OwnLine
+                    && next.role == CommentRole::Note
+                    && next.span.start_line == last.span.end_line + 1
+                    && column(next) == column(c)
+                    && next.sigil.is_none()
+                    && next.tag.is_none()
+                    && next.level_marker.is_none()
+                    && !next.text.is_empty();
+                if !continues {
+                    break;
+                }
+                text.push(' ');
+                text.push_str(&next.text);
+                last = next;
+            }
             let owner = c.unit.map(|u| {
                 let mut top = u;
                 while let Some(p) = self.units[top].parent {
@@ -1353,7 +1376,7 @@ impl Builder {
             self.doc.risks.push(Risk {
                 comment: c.id,
                 kind: sigil,
-                text: c.text.clone(),
+                text,
                 line: c.span.start_line,
                 unit: c.unit,
                 owner,
@@ -1413,6 +1436,65 @@ impl Builder {
                 u.kind == UnitKind::Statement && level(u.level) && self.is_descendant(u.id, root)
             })
             .count()
+    }
+
+    /// W053: an `L2`/`L3` marker must not hide a write or an effect, directly or through a helper
+    /// (SPEC §9.3, §10.5). Such a marker usually belongs to a comment about something else.
+    fn check_markers_hiding_actions(&mut self) {
+        let acts = |e: &Effect| e.category == "write" || e.category == "effect";
+        let helper_acts: HashSet<String> = self
+            .doc
+            .functions
+            .iter()
+            .filter(|f| {
+                self.doc.effects.iter().any(|e| {
+                    acts(e)
+                        && e.unit
+                            .is_some_and(|u| u == f.unit || self.is_descendant(u, f.unit))
+                })
+            })
+            .map(|f| f.name.clone())
+            .collect();
+        let mut found = Vec::new();
+        for u in &self.units {
+            // Only markers that actually lower the unit: inside an L2 helper an `L2` hides nothing.
+            let unmarked = u
+                .default_level
+                .max(u.parent.map_or(0, |p| self.units[p].level));
+            if u.marker.is_none_or(|m| m < 2 || m <= unmarked) {
+                continue;
+            }
+            let inside =
+                |x: Option<usize>| x.is_some_and(|x| x == u.id || self.is_descendant(x, u.id));
+            let direct = self
+                .doc
+                .effects
+                .iter()
+                .filter(|e| acts(e) && inside(e.unit))
+                .map(|e| e.call.clone());
+            let via = self
+                .doc
+                .calls
+                .iter()
+                .filter(|c| inside(c.unit) && helper_acts.contains(&c.callee))
+                .map(|c| c.callee.clone());
+            if let Some(what) = direct.chain(via).next() {
+                let line = u
+                    .comments
+                    .iter()
+                    .map(|&c| &self.doc.comments[c])
+                    .find(|c| c.level_marker.is_some())
+                    .map_or(u.span.start_line, |c| c.span.start_line);
+                found.push((line, u.marker.unwrap(), what));
+            }
+        }
+        for (line, m, what) in found {
+            self.warn(
+                "W053",
+                line,
+                format!("L{m} marker hides `{what}` from L1; writes and effects belong in the story (§10)"),
+            );
+        }
     }
 
     fn is_descendant(&self, mut u: usize, root: usize) -> bool {

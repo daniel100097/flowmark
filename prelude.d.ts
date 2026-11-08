@@ -43,7 +43,10 @@ type Id = string | number
 type Email = Brand<string, "Email">
 /** One-way hashed value (passwords). */
 type Hashed = Brand<string, "Hashed">
-/** Clear-text secret: token, key, password. Must never reach output, logs or mail. */
+/**
+ * Clear-text secret: token, key, password. Must not reach output, logs, mail or third parties, unless that
+ * is its purpose (e.g. the link in an invitation or password-reset mail).
+ */
 type Secret = Brand<string, "Secret">
 /** "30s", "5m", "1h", "7d" */
 type Duration = string

@@ -43,8 +43,9 @@ Write a `*.review.ts` file that a reviewer reads instead of the code. Next to th
 - **Refs:** `// @ Symbol`, `// @ path/file.ext`, `// @ Symbol "exact quote"`, or `// @ "quote"` (searched in the
   ref of the enclosing function, handle or type). No line numbers. Every statement that touches access,
   input, data, effects or output needs one.
-- **Risks:** `// ! <concrete consequence>` for security, money, data loss, privacy, double execution or
-  irreversible effects; `// !? <unconfirmed risk>`; `// ? <fact you're unsure of>`.
+- **Risks:** `// ! <what goes wrong>` for bugs, security, money, data loss, privacy, double execution or races;
+  `// !? <unconfirmed risk>`; `// ? <fact you're unsure of>`. That an effect can't be undone is not a risk by
+  itself. A long risk continues on plain `//` lines.
 - **Levels:** the defaults are usually right, so only mark exceptions with `// L2` or `// L3`.
   - L1 is the story: every boundary (who, what comes in, what is stored, what goes out).
   - L2 is the evidence; L3 is trivia.

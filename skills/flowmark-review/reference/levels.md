@@ -7,7 +7,8 @@
 For every statement, ask in order. The first "yes" decides.
 
 1. **Can it cause harm?** Security, data loss or corruption, money, privacy,
-   double execution, an effect that cannot be undone, a race.
+   double execution, a race, an effect that cannot be undone *and can go wrong* (sent twice, to the wrong
+   person, before the data is saved).
    → add a `!` comment (always visible). Then continue with question 2 for the statement itself.
 2. **Does it cross a boundary?**
    - *who*: access checks, ownership checks

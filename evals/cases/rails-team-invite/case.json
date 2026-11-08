@@ -1,0 +1,55 @@
+{
+  "id": "rails-team-invite",
+  "prompt": "Write a Flowmark review of how team invitations work in this Rails app: inviting someone and accepting the invitation.",
+  "truth": {
+    "entries": [
+      {
+        "trigger": "^POST /teams/[:{]\\w+}?/invitations$",
+        "access": ""
+      },
+      {
+        "trigger": "^POST /invitations/[:{]\\w+}?/accept$",
+        "access": "user"
+      }
+    ],
+    "writes": [
+      "Invitation",
+      "Membership"
+    ],
+    "effects": [
+      "InvitationMailer|invite|mail"
+    ],
+    "risks": [],
+    "max_risks": 0,
+    "known_risks": [
+      {
+        "id": "expired-invite-blocks-reinvite",
+        "any": [
+          [
+            "expir",
+            "block|409|already invited|re-?invit|forever|unique"
+          ]
+        ]
+      },
+      {
+        "id": "throttle-bypass-format-suffix",
+        "any": [
+          [
+            "throttle|rate.?limit|limit",
+            "\\.json|suffix|format|trailing|slash|bypass|skip"
+          ]
+        ]
+      },
+      {
+        "id": "missing-email-500",
+        "any": [
+          [
+            "email",
+            "nil|500|strip|crash|missing"
+          ]
+        ]
+      }
+    ],
+    "note": "Meant as clean code, but the first agents found three real bugs (known_risks); `!` risks outside planted and known ones count as false alarms."
+  }
+}

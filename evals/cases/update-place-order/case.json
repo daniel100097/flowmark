@@ -1,0 +1,99 @@
+{
+  "id": "update-place-order",
+  "pr": {
+    "base": "php-place-order",
+    "base_extra": "base-extra",
+    "title": "Take prices from the products table; support an Idempotency-Key header"
+  },
+  "update": {
+    "file": "docs/review/place-order.review.ts"
+  },
+  "prompt": "The last commit (\"Take prices from the products table; support an Idempotency-Key header\") changed how orders are placed. Update docs/review/place-order.review.ts so it matches the code again.",
+  "truth": {
+    "entries": [
+      {
+        "trigger": "^POST /(api/)?orders$",
+        "access": "user"
+      },
+      {
+        "trigger": "^event OrderPlaced$"
+      }
+    ],
+    "input": [
+      "PlaceOrderRequest|PlaceOrder"
+    ],
+    "reads": [
+      "Product"
+    ],
+    "writes": [
+      "Order",
+      "OrderItem",
+      "cache|idempot"
+    ],
+    "effects": [
+      "Stripe",
+      "OrderPlaced",
+      "OrderConfirmation"
+    ],
+    "risks": [
+      {
+        "id": "charge-inside-transaction",
+        "any": [
+          [
+            "transaction|rollback|roll back|commit",
+            "stripe|charge|external"
+          ]
+        ]
+      },
+      {
+        "id": "idempotency-key-not-scoped",
+        "any": [
+          [
+            "user|owner|scop|someone else|another|other (customer|client|user)|leak|any order|foreign",
+            "key|idempot|cache"
+          ]
+        ]
+      }
+    ],
+    "bonus_risks": [
+      {
+        "id": "idempotency-race",
+        "any": [
+          [
+            "race|concurrent|simultaneous|at the same time|parallel|check.then|in.flight|both requests|overlapping|still running|while the first|no lock|nothing locks|both (miss|charge)"
+          ]
+        ]
+      }
+    ],
+    "pr": {
+      "risks_added": [
+        {
+          "id": "idempotency-key-not-scoped",
+          "any": [
+            [
+              "user|owner|scop|someone else|another|other (customer|client|user)|leak|any order|foreign",
+              "key|idempot|cache"
+            ]
+          ]
+        }
+      ],
+      "risks_removed": [
+        {
+          "id": "client-sets-price",
+          "any": [
+            [
+              "price",
+              "client|request|chooses|sets|pays"
+            ]
+          ]
+        }
+      ],
+      "card_changed": [
+        "writes"
+      ],
+      "unchanged_entries": [
+        "sendOrderConfirmation"
+      ]
+    }
+  }
+}

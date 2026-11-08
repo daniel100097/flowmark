@@ -235,6 +235,12 @@ ref       = "@" SPACE [ target ] [ SPACE quote ]   (§8)
 | `// used by: … @ …` | other callers of the next function |
 | `// L2 …` / `// L3 …` | detail-level marker (§9.3) |
 
+A `!`, `!?` or `?` comment that needs more than one line continues on the following plain `//` lines
+(same indentation, no sigil); they are part of the same risk.
+
+Name what goes wrong, not the category: "can be sent twice after a retry", "a client can set role=admin".
+That a mail or a charge cannot be undone is not a risk by itself.
+
 A ref starts with `@` followed by a space, at the start of a comment or after a space.
 `a@b.com` or `@param` are not refs.
 
@@ -377,7 +383,8 @@ A visible call to a helper defined in the file can be expanded **in place**.
 For every statement, ask in order. The first "yes" decides.
 
 1. **Can it cause harm?** Security, data loss or corruption, money, privacy,
-   double execution, an effect that cannot be undone, a race.
+   double execution, a race, an effect that cannot be undone *and can go wrong* (sent twice, to the wrong
+   person, before the data is saved).
    → add a `!` comment (always visible). Then continue with question 2 for the statement itself.
 2. **Does it cross a boundary?**
    - *who*: access checks, ownership checks
@@ -536,7 +543,7 @@ A mismatch is a gate error.
   - `db.*` or `external()` inside a loop (one query or call per item)
   - `mail`, `notify`, `external`, `queue` inside `db.transaction` without `afterCommit` (effect before commit)
   - `retries > 0` without `idempotent: true` (may run twice)
-  - level marker without effect (§9.3); L1 or L2 budget exceeded (§10.3)
+  - level marker without effect (§9.3); a level marker that hides a write or effect (`W053`); L1 or L2 budget exceeded (§10.3)
 
 ### 12.4 Output: index
 

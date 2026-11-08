@@ -57,30 +57,49 @@ function codeFiles(dir) {
     .map((p) => [path.relative(dir, p).split(path.sep).join("/"), readFileSync(p, "utf8")]);
 }
 
-/// Checks one ref against the code. Returns null when it holds, or why it does not.
+const word = (w) => new RegExp(`(^|[^A-Za-z0-9_$])${w.replace(/[$]/g, "\\$")}($|[^A-Za-z0-9_$])`);
+
+/// Does `text` define `name` (function, method, class, type, const)? Language-neutral heuristics.
+function defines(text, name) {
+  const n = name.replace(/[$]/g, "\\$");
+  return [
+    new RegExp(`\\b(def|function|func|fn|class|interface|struct|type|module|enum|trait)\\s+(\\([^)]*\\)\\s*)?${n}\\b`),
+    new RegExp(`\\b(const|let|var)\\s+${n}\\s*=`),
+    new RegExp(`^\\s*((public|private|protected|static|async|final|abstract|override)\\s+)*${n}\\s*\\(`, "m"),
+  ].some((r) => r.test(text));
+}
+
+/// Checks one ref against the code: { why } when it does not hold, and the files it matched.
 function checkRef(ref, files) {
   const target = ref.resolved;
-  if (!target) return "no target or scope";
+  if (!target) return { why: "no target or scope", files: [] };
+  const fail = (why) => ({ why, files: [] });
   let candidates = files;
   if (target.path) {
     const p = target.path.replace(/^\.?\//, "");
     candidates = files.filter(([f]) => f === p || f.endsWith("/" + p));
-    if (!candidates.length) return `file ${target.path} not found`;
+    if (!candidates.length) return fail(`file ${target.path} not found`);
   }
   if (target.symbol) {
     const parts = target.symbol.split(".").filter(Boolean);
     const name = parts[parts.length - 1];
     const owner = parts.length > 1 ? parts[0] : null;
-    const word = (w) => new RegExp(`(^|[^A-Za-z0-9_$])${w.replace(/[$]/g, "\\$")}($|[^A-Za-z0-9_$])`);
     const withName = candidates.filter(([, t]) => word(name).test(t));
     const withOwner = owner ? withName.filter(([f, t]) => word(owner).test(t) || f.includes(owner)) : withName;
-    if (!withOwner.length) return `symbol ${target.symbol} not found`;
+    if (!withOwner.length) return fail(`symbol ${target.symbol} not found`);
     candidates = withOwner;
+    // SPEC §8.2: a symbol defined in several files needs a path.
+    const definers = candidates.filter(([, t]) => defines(t, name));
+    if (!target.path && definers.length > 1 && !(owner && definers.filter(([f, t]) => defines(t, owner) || f.includes(owner)).length === 1)) {
+      return fail(`symbol ${target.symbol} is ambiguous (${definers.map(([f]) => f).join(", ")})`);
+    }
+    if (definers.length) candidates = definers;
   }
-  if (ref.quote && !candidates.some(([, t]) => squash(t).includes(squash(ref.quote)))) {
-    return `quote "${ref.quote}" not found in ${target.raw}`;
+  if (ref.quote) {
+    candidates = candidates.filter(([, t]) => squash(t).includes(squash(ref.quote)));
+    if (!candidates.length) return fail(`quote "${ref.quote}" not found in ${target.raw}`);
   }
-  return null;
+  return { why: null, files: candidates.map(([f]) => f) };
 }
 
 /// Level rule: an L2/L3 marker must not hide a write or an effect (directly or through a helper).
@@ -96,7 +115,9 @@ function levelViolations(doc) {
   const helperActs = new Map(doc.functions.map((f) => [f.name, acting(new Set(subtree(f.unit)))]));
   const out = [];
   for (const u of doc.units) {
-    if (u.marker == null || u.marker < 2) continue;
+    // Only markers that actually lower the unit (inside an L2 helper an `L2` hides nothing).
+    const unmarked = Math.max(u.default_level, u.parent == null ? 0 : doc.units[u.parent].level);
+    if (u.marker == null || u.marker < 2 || u.marker <= unmarked) continue;
     const set = new Set(subtree(u.id));
     const viaHelper = doc.calls.some((c) => set.has(c.unit) && helperActs.get(c.callee));
     if (acting(set) || viaHelper) out.push(`line ${u.span.start_line}: L${u.marker} hides a write/effect`);
@@ -119,17 +140,23 @@ let headFiles = reviewFiles;
 let baseFiles = [];
 let codeFor = () => codeFiles(path.join(here, "cases", caseId, "repo"));
 if (spec.pr) {
-  baseFiles = reviewFiles.filter((f) => /base/i.test(path.basename(f)));
-  headFiles = reviewFiles.filter((f) => !baseFiles.includes(f));
+  if (spec.update) {
+    baseFiles = [path.join(here, "cases", caseId, spec.pr.base_extra, spec.update.file)];
+    headFiles = reviewFiles;
+  } else {
+    baseFiles = reviewFiles.filter((f) => /base/i.test(path.basename(f)));
+    headFiles = reviewFiles.filter((f) => !baseFiles.includes(f));
+  }
   const baseCode = path.join(here, "cases", spec.pr.base, "repo");
   const headCode = mkdtempSync(path.join(tmpdir(), "fm-head-"));
   cpSync(baseCode, headCode, { recursive: true });
   cpSync(path.join(here, "cases", caseId, "head"), headCode, { recursive: true });
   const base = codeFiles(baseCode);
   const head = codeFiles(headCode);
-  codeFor = (file) => (baseFiles.includes(file) ? base : head);
+  codeFor = (file) => (baseFiles.includes(file) && !spec.update ? base : head);
 }
 
+// In update mode the original review is not the agent's work: only the updated file is graded as a file.
 const docs = reviewFiles.map((file) => ({ file, doc: parse(file) }));
 const headDocs = docs.filter((d) => headFiles.includes(d.file)).map((d) => d.doc);
 
@@ -175,6 +202,13 @@ const effectNames = [
 ];
 const hasName = (names, alts) => names.some((n) => alts.split("|").some((a) => norm(n).includes(norm(a)) || (norm(n) && norm(a).includes(norm(n)))));
 result.checks.writes = truth.writes.map((w) => ({ expected: w, found: hasName(writeNames, w) }));
+if (truth.reads) {
+  const readNames = [
+    ...headDocs.flatMap((d) => d.effects.filter((e) => e.category === "read").map((e) => e.name || "")),
+    ...cardItems("reads").map((i) => i.name),
+  ];
+  result.checks.reads = truth.reads.map((w) => ({ expected: w, found: hasName(readNames, w) }));
+}
 result.checks.effects = truth.effects.map((w) => ({
   expected: w,
   found: effectNames.some((n) => new RegExp(w, "i").test(n)),
@@ -185,19 +219,36 @@ const riskTexts = headDocs.flatMap((d) => d.risks.map((r) => `${r.kind} ${r.text
 result.checks.risks = truth.risks.map((r) => ({ id: r.id, found: found(riskTexts, r) }));
 result.checks.bonusRisks = (truth.bonus_risks || []).map((r) => ({ id: r.id, found: found(riskTexts, r) }));
 result.checks.riskCount = riskTexts.length;
+result.checks.riskKinds = {
+  "!": headDocs.flatMap((d) => d.risks).filter((r) => r.kind === "!").length,
+  "!?": headDocs.flatMap((d) => d.risks).filter((r) => r.kind === "!?").length,
+};
+// `!` risks that are neither planted nor a known real issue: probable false alarms (clean-code cases).
+if (truth.max_risks != null) {
+  const legit = [...truth.risks, ...(truth.known_risks || [])];
+  const unexplained = headDocs
+    .flatMap((d) => d.risks)
+    .filter((r) => r.kind === "!" && !legit.some((rule) => found([`! ${r.text}`], rule)));
+  result.checks.knownRisks = (truth.known_risks || []).map((r) => ({ id: r.id, found: found(riskTexts, r) }));
+  result.checks.falseAlarms = unexplained.map((r) => r.text);
+}
 
 // refs
 let refTotal = 0;
 const refFailures = [];
+const noiseRefs = [];
 for (const { file, doc } of docs) {
   const code = codeFor(file);
   for (const ref of doc.refs) {
     refTotal++;
-    const why = checkRef(ref, code);
+    const { why, files } = checkRef(ref, code);
     if (why) refFailures.push(`${path.basename(file)}:${ref.line} ${ref.raw} → ${why}`);
+    else if (truth.noise && files.length && files.every((f) => truth.noise.some((n) => f.startsWith(n)))) {
+      noiseRefs.push(`${path.basename(file)}:${ref.line} ${ref.raw}`);
+    }
   }
 }
-result.checks.refs = { total: refTotal, verified: refTotal - refFailures.length, failures: refFailures };
+result.checks.refs = { total: refTotal, verified: refTotal - refFailures.length, failures: refFailures, noise: noiseRefs };
 
 // level rule
 result.checks.levels = docs.flatMap(({ file, doc }) => levelViolations(doc).map((v) => `${path.basename(file)} ${v}`));
@@ -214,6 +265,21 @@ if (spec.pr) {
   const pr = { baseFile: baseFiles.map((f) => path.basename(f)), headFile: headFiles.map((f) => path.basename(f)) };
   if (baseFiles.length === 1 && headFiles.length === 1) {
     const m = JSON.parse(fm("model", baseFiles[0], headFiles[0]).stdout);
+    if (truth.pr.unchanged_entries) {
+      const entryText = (file) => {
+        // Spans are UTF-8 byte offsets.
+        const bytes = readFileSync(file);
+        const doc = parse(file);
+        return (name) => {
+          const e = doc.entries.find((x) => x.name === name);
+          if (!e) return null;
+          const u = doc.units[e.unit];
+          return bytes.subarray(u.span.start, u.span.end).toString("utf8");
+        };
+      };
+      const [b, h] = [entryText(baseFiles[0]), entryText(headFiles[0])];
+      pr.unchanged = truth.pr.unchanged_entries.map((n) => ({ entry: n, found: b(n) !== null && b(n) === h(n) }));
+    }
     const c = m.changes;
     pr.risksAdded = truth.pr.risks_added.map((r) => ({ id: r.id, found: found(c.risks_added, r) }));
     pr.risksRemoved = truth.pr.risks_removed.map((r) => ({ id: r.id, found: found(c.risks_removed, r) }));
@@ -235,15 +301,22 @@ const parts = {
   access: [5, frac(result.checks.entries, "accessOk")],
   input: [5, frac(result.checks.input)],
   writes: [10, frac(result.checks.writes)],
+  ...(result.checks.reads ? { reads: [5, frac(result.checks.reads)] } : {}),
   effects: [10, frac(result.checks.effects)],
   risks: [30, frac(result.checks.risks)],
   refs: [15, refTotal ? (refTotal - refFailures.length) / refTotal : 0],
 };
+if (truth.noise) parts.focus = [5, noiseRefs.length === 0 ? 1 : noiseRefs.length <= 2 ? 0.5 : 0];
+if (truth.max_risks != null) {
+  const over = result.checks.falseAlarms.length - truth.max_risks;
+  parts.precision = [20, over <= 0 ? 1 : over === 1 ? 0.5 : 0];
+}
 if (spec.pr && result.checks.pr.risksAdded) {
   const pr = result.checks.pr;
   parts.prRisks = [15, (frac(pr.risksAdded) + frac(pr.risksRemoved)) / 2];
   parts.prCard = [5, frac(pr.cardChanged)];
   parts.prMinimal = [5, pr.diff.changedRatio <= 0.3 ? 1 : pr.diff.changedRatio <= 0.6 ? 0.5 : 0];
+  if (pr.unchanged) parts.prUnchanged = [5, frac(pr.unchanged)];
 }
 const max = Object.values(parts).reduce((s, [w]) => s + w, 0);
 const got = Object.values(parts).reduce((s, [w, f]) => s + w * f, 0);
@@ -262,11 +335,15 @@ function report() {
   console.log(`  entries: ${c.entries.map((e) => `${e.trigger} ${e.found ? (e.accessOk ? "✓" : `access ✗ (${e.access})`) : "✗"}`).join("; ")}`);
   if (c.input) console.log(`  input: ${c.input.map((i) => `${i.expected} ${i.found ? "✓" : "✗"}`).join("; ")}`);
   console.log(`  writes: ${c.writes.map((i) => `${i.expected} ${i.found ? "✓" : "✗"}`).join("; ")}`);
+  if (c.reads) console.log(`  reads: ${c.reads.map((i) => `${i.expected} ${i.found ? "✓" : "✗"}`).join("; ")}`);
   console.log(`  effects: ${c.effects.map((i) => `${i.expected} ${i.found ? "✓" : "✗"}`).join("; ")}`);
-  console.log(`  planted risks: ${c.risks.map((r) => `${r.id} ${r.found ? "✓" : "✗"}`).join("; ")}  (${c.riskCount} risks total)`);
+  console.log(`  planted risks: ${c.risks.map((r) => `${r.id} ${r.found ? "✓" : "✗"}`).join("; ") || "none"}  (${c.riskKinds["!"]} \`!\`, ${c.riskKinds["!?"]} \`!?\`)`);
   if (c.bonusRisks.length) console.log(`  bonus risks: ${c.bonusRisks.map((r) => `${r.id} ${r.found ? "✓" : "✗"}`).join("; ")}`);
+  if (c.knownRisks) console.log(`  known real issues found: ${c.knownRisks.map((r) => `${r.id} ${r.found ? "✓" : "✗"}`).join("; ")}`);
+  if (c.falseAlarms) console.log(`  probable false alarms (\`!\`): ${c.falseAlarms.length}${c.falseAlarms.map((t) => `\n    - ${t.slice(0, 110)}`).join("")}`);
   console.log(`  refs: ${c.refs.verified}/${c.refs.total} verified`);
   for (const f of c.refs.failures) console.log(`    ✗ ${f}`);
+  if (c.refs.noise.length) console.log(`  refs into noise code: ${c.refs.noise.join("; ")}`);
   if (c.levels.length) console.log(`  level rule: ${c.levels.join("; ")}`);
   console.log(`  size: ${c.size.map((s) => `${s.file} ${s.lines} lines (L1 ${s.l1Lines})`).join("; ")}`);
   if (c.pr) {
@@ -275,6 +352,7 @@ function report() {
       console.log(`  PR risks added: ${pr.risksAdded.map((r) => `${r.id} ${r.found ? "✓" : "✗"}`).join("; ")}`);
       console.log(`  PR risks removed: ${pr.risksRemoved.map((r) => `${r.id} ${r.found ? "✓" : "✗"}`).join("; ")}`);
       console.log(`  PR card changed: ${pr.cardChanged.map((r) => `${r.field} ${r.found ? "✓" : "✗"}`).join("; ")}`);
+      if (pr.unchanged) console.log(`  unchanged entries: ${pr.unchanged.map((r) => `${r.entry} ${r.found ? "✓" : "✗"}`).join("; ")}`);
       console.log(`  PR diff: +${pr.diff.added} −${pr.diff.removed} of ${pr.diff.baseLines} base lines (ratio ${pr.diff.changedRatio})`);
     }
   }

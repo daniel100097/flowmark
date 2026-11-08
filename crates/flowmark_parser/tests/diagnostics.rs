@@ -284,3 +284,75 @@ fn input_cannot_be_lowered() {
     ));
     assert!(codes(&src).contains(&"E024"));
 }
+
+#[test]
+fn w053_marker_hides_a_write() {
+    let body = r#"const save = entry({
+  trigger: "POST /things",
+  access: "user",
+  handle(req): string {
+    // a comment about validation
+    // L2
+    db.insert<Thing>({})
+    // L3
+    const label = "x"
+    return label
+  },
+})
+"#;
+    let doc = parse(&with_header(body));
+    let w: Vec<_> = doc
+        .diagnostics
+        .iter()
+        .filter(|d| d.code == "W053")
+        .collect();
+    assert_eq!(w.len(), 1, "{:#?}", doc.diagnostics);
+    assert!(w[0].message.contains("db.insert"), "{}", w[0].message);
+}
+
+#[test]
+fn w053_through_a_helper() {
+    let body = r#"const save = entry({
+  trigger: "POST /things",
+  access: "user",
+  handle(req): string {
+    persist() // L3
+    return "ok"
+  },
+})
+
+function persist() {
+  db.insert<Thing>({})
+}
+"#;
+    let doc = parse(&with_header(body));
+    assert!(
+        doc.diagnostics
+            .iter()
+            .any(|d| d.code == "W053" && d.message.contains("persist")),
+        "{:#?}",
+        doc.diagnostics
+    );
+}
+
+#[test]
+fn a_risk_continues_on_plain_comment_lines() {
+    let body = r#"const save = entry({
+  trigger: "POST /things",
+  access: "user",
+  handle(req): string {
+    // ! the throttle matches only the exact path,
+    // so a .json suffix skips it
+    // ? second, separate comment
+    db.insert<Thing>({})
+    return "ok"
+  },
+})
+"#;
+    let doc = parse(&with_header(body));
+    assert_eq!(doc.risks.len(), 1);
+    assert_eq!(
+        doc.risks[0].text,
+        "the throttle matches only the exact path, so a .json suffix skips it"
+    );
+}
