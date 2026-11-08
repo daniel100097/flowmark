@@ -1,0 +1,17 @@
+{
+  "id": "go-stripe-webhook",
+  "prompt": "Write a Flowmark review for the Stripe webhook in this Go service: what each event does to our data and who gets notified.",
+  "truth": {
+    "entries": [{ "trigger": "^POST /webhooks/stripe$", "access": "signature" }],
+    "writes": ["accounts|Account", "credit_ledger|CreditLedger|Ledger", "subscriptions|Subscription"],
+    "effects": ["SendGrid|subscription-canceled|mail"],
+    "risks": [
+      { "id": "double-credit", "any": [["idempot|twice|duplicate|retr|replay|again|more than once|same event"]] },
+      { "id": "credit-error-swallowed", "any": [["200|2xx|swallow|ignor|lost|log(s|ged)? only|only log|not retried|no retry|never retr"]] },
+      { "id": "email-in-log", "any": [["email|personal|pii|privacy"]] }
+    ],
+    "bonus_risks": [
+      { "id": "mail-after-commit-on-cancel-fails", "any": [["mail|email|sendgrid", "fail|error|500|retr"]] }
+    ]
+  }
+}

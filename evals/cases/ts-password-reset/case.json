@@ -1,0 +1,22 @@
+{
+  "id": "ts-password-reset",
+  "prompt": "Document the password reset flow of this Express API (forgot password and reset password) as a Flowmark review file.",
+  "truth": {
+    "entries": [
+      { "trigger": "^POST /(api/)?password/forgot$", "access": "public" },
+      { "trigger": "^POST /(api/)?password/reset$", "access": "public" }
+    ],
+    "input": ["ForgotSchema|ForgotInput|Forgot", "ResetSchema|ResetInput|Reset"],
+    "writes": ["PasswordReset", "User"],
+    "effects": ["password-reset|Postmark|mail"],
+    "risks": [
+      { "id": "guessable-token", "any": [["Math\\.random|guess|predict|weak|not (cryptographically )?(secure|random)|insecure"]] },
+      { "id": "no-expiry", "any": [["expir|never expires|forever|no (time|ttl)"]] },
+      { "id": "token-reusable", "any": [["reus|not deleted|never deleted|stays valid|again|single.use|one.time|invalidat"]] }
+    ],
+    "bonus_risks": [
+      { "id": "token-stored-plain", "any": [["plain|unhashed|not hashed|clear"]] },
+      { "id": "reset-not-rate-limited", "any": [["rate|brute|limit"]] }
+    ]
+  }
+}

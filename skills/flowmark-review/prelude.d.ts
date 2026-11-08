@@ -181,7 +181,8 @@ interface Shape<I> {
  *
  *   input: shape<SignupInput>(),
  *
- * Invalid input fails with 422 (HTTP) or the transport's validation error, and `handle` never runs.
+ * Invalid input is rejected with the framework's validation error (HTTP: usually 422 or 400) and `handle`
+ * never runs. If the status matters, say it in a comment.
  * `handle` then reads `req.input` (validated) instead of `req.raw` (not validated).
  * @category input
  */
@@ -225,6 +226,7 @@ interface RequestOptions {
 
 /** jobs, messages, events */
 interface RetryOptions {
+  /** retries after the first attempt (Laravel `$tries = 3` is `retries: 2`) */
   retries?: number
   backoff?: Duration
   /** at most one run per key at a time */
@@ -287,7 +289,8 @@ declare function entry<T extends Trigger, I = never>(def: EntryDef<T, I>): Entry
 // ─── input ───────────────────────────────────────────────────────────────────
 
 /**
- * Validates untrusted data against T, as a step in the flow. Fails with 422 when invalid.
+ * Validates untrusted data against T, as a step in the flow. Fails with the code's validation error
+ * (HTTP: usually 422 or 400) when invalid.
  * Returns only the validated fields.
  *
  * For the entry's own input that the framework validates before `handle` runs, declare

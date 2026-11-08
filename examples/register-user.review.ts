@@ -75,7 +75,7 @@ const sendWelcomeMail = entry({
   trigger: "event UserRegistered", // @ EventServiceProvider "UserRegistered::class"
   access: "system",
   queued: true, // @ SendWelcomeMail "implements ShouldQueue"
-  retries: 3, // @ SendWelcomeMail "$tries = 3"
+  retries: 2, // 3 attempts in total @ SendWelcomeMail "$tries = 3"
   handle({ user }) { // @ SendWelcomeMail.handle
     mail(user.email, "WelcomeMail") // ! irreversible: a retry after a timeout can send it twice
   },

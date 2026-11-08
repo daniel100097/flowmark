@@ -22,7 +22,7 @@ test("SKILL.md frontmatter", () => {
 
 test("files SKILL.md points to exist", () => {
   const md = read(skill, "SKILL.md");
-  for (const f of ["prelude.d.ts", "examples/register-user.review.ts", "examples/t3code-update-server-settings.review.ts", "reference/levels.md"]) {
+  for (const f of ["prelude.d.ts", "examples/register-user.review.ts", "reference/levels.md"]) {
     assert.ok(md.includes(f), `SKILL.md mentions ${f}`);
     assert.ok(existsSync(path.join(skill, f)), `${f} exists`);
   }
@@ -31,15 +31,11 @@ test("files SKILL.md points to exist", () => {
 test("copies are in sync with the repo (run scripts/sync-skill.sh)", () => {
   assert.equal(read(skill, "prelude.d.ts"), read(root, "prelude.d.ts"));
   assert.equal(read(skill, "examples/register-user.review.ts"), read(root, "examples/register-user.review.ts"));
-  assert.equal(
-    read(skill, "examples/t3code-update-server-settings.review.ts"),
-    read(root, "examples/t3code-pr-25709/head.review.ts"),
-  );
   const guide = execFileSync("node", [path.join(root, "scripts/level-guide.mjs")]).toString();
   assert.equal(read(skill, "reference/levels.md"), guide);
 });
 
-test("the shipped examples pass flowmark check (only the example's known finding)", () => {
+test("the shipped example passes flowmark check (only its known finding)", () => {
   if (!existsSync(bin)) execFileSync("cargo", ["build", "-q", "-p", "flowmark_cli"], { cwd: root });
   const out = (f) => {
     try {
@@ -49,5 +45,4 @@ test("the shipped examples pass flowmark check (only the example's known finding
     }
   };
   assert.match(out("register-user.review.ts"), /^\S+:53: warning W060: [^\n]+\n$/);
-  assert.equal(out("t3code-update-server-settings.review.ts"), "");
 });

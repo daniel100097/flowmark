@@ -1,0 +1,59 @@
+{
+  "id": "php-place-order",
+  "prompt": "Write a Flowmark review that explains how placing an order works in this Laravel app (POST /orders), including what happens after the order is placed.",
+  "truth": {
+    "entries": [
+      {
+        "trigger": "^POST /(api/)?orders$",
+        "access": "user"
+      },
+      {
+        "trigger": "^event OrderPlaced$"
+      }
+    ],
+    "input": [
+      "PlaceOrderRequest|PlaceOrder"
+    ],
+    "writes": [
+      "Order",
+      "OrderItem"
+    ],
+    "effects": [
+      "Stripe",
+      "OrderPlaced",
+      "OrderConfirmation"
+    ],
+    "risks": [
+      {
+        "id": "client-sets-price",
+        "any": [
+          [
+            "price"
+          ]
+        ]
+      },
+      {
+        "id": "charge-inside-transaction",
+        "any": [
+          [
+            "transaction|rollback|roll back|commit",
+            "stripe|charge|external"
+          ]
+        ]
+      },
+      {
+        "id": "mail-twice-or-before-commit",
+        "any": [
+          [
+            "retr|twice|duplicate|again|more than once",
+            "mail|email|confirmation"
+          ],
+          [
+            "commit",
+            "listener|queue|event|mail"
+          ]
+        ]
+      }
+    ]
+  }
+}

@@ -33,7 +33,7 @@ const sendWelcomeMail = entry({
   trigger: "event UserRegistered",
   access: "system",
   queued: true,
-  retries: 3,
+  retries: 2,  // 3 attempts in total
   handle({ user }) {
     mail(user.email, "WelcomeMail")  // ! irreversible: a retry after a timeout can send it twice
   },

@@ -1,0 +1,25 @@
+{
+  "id": "pr-password-reset",
+  "pr": { "base": "ts-password-reset", "title": "Expire reset tokens after an hour, use crypto tokens, send a 'password changed' mail" },
+  "prompt": "The last commit in this repo is a pull request (\"Expire reset tokens after an hour, use crypto tokens, send a 'password changed' mail\"). Review it as Flowmark files: the password reset flow before the PR (base) and after it (head).",
+  "truth": {
+    "entries": [
+      { "trigger": "^POST /(api/)?password/forgot$", "access": "public" },
+      { "trigger": "^POST /(api/)?password/reset$", "access": "public" }
+    ],
+    "writes": ["PasswordReset", "User"],
+    "effects": ["password-reset|Postmark|mail", "password-changed"],
+    "pr": {
+      "risks_added": [{ "id": "password-in-mail", "any": [["password", "mail|email|template|plain|clear"]] }],
+      "risks_removed": [
+        { "id": "guessable-token", "any": [["Math\\.random|guess|predict|weak|not (cryptographically )?(secure|random)|insecure"]] },
+        { "id": "no-expiry", "any": [["expir|never expires|forever|no (time|ttl)"]] }
+      ],
+      "card_changed": ["effects"]
+    },
+    "risks": [
+      { "id": "token-reusable", "any": [["reus|not deleted|never deleted|stays valid|again|single.use|one.time|invalidat"]] },
+      { "id": "password-in-mail", "any": [["password", "mail|email|template|plain|clear"]] }
+    ]
+  }
+}

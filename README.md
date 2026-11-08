@@ -50,7 +50,7 @@ updates review files. It covers:
 - a self-check loop with `flowmark check` and the type check
 - what to report at the end
 
-It ships the prelude, both examples and the level guide. `scripts/sync-skill.sh` copies them from the
+It ships the prelude, an example and the level guide. `scripts/sync-skill.sh` copies them from the
 repo, and `npm test` fails when the copies are out of date.
 
 Install it for every project, or for one repo:
@@ -60,6 +60,9 @@ git clone https://github.com/daniel100097/flowmark
 cp -r flowmark/skills/flowmark-review ~/.claude/skills/        # every project
 cp -r flowmark/skills/flowmark-review <repo>/.claude/skills/   # one repo
 ```
+
+[`evals/`](evals/README.md) measures how well it works: 4 codebases with planted bugs, a grader, and
+A/B results (the current short version found 11 of 11 planted bugs with 196 of 196 refs verified).
 
 Then ask, for example, "write a flowmark review for PR 123" or "document how signup works as a flowmark
 file", or run `/flowmark-review`. The skill installs the CLI itself if it is missing
